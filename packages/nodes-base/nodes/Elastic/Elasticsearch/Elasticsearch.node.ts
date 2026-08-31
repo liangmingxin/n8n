@@ -1,3 +1,4 @@
+import omit from 'lodash/omit';
 import type {
 	IExecuteFunctions,
 	IDataObject,
@@ -6,17 +7,16 @@ import type {
 	INodeTypeDescription,
 	JsonObject,
 } from 'n8n-workflow';
-import { NodeConnectionType, jsonParse, NodeApiError } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeApiError } from 'n8n-workflow';
 
-import omit from 'lodash/omit';
+import { parseAndResolveQueryParameters } from '@utils/query-parameters';
+
+import { documentFields, documentOperations, indexFields, indexOperations } from './descriptions';
 import {
 	elasticsearchApiRequest,
 	elasticsearchApiRequestAllItems,
 	elasticsearchBulkApiRequest,
 } from './GenericFunctions';
-
-import { documentFields, documentOperations, indexFields, indexOperations } from './descriptions';
-
 import type { DocumentGetAllOptions, FieldsUiValues } from './types';
 
 export class Elasticsearch implements INodeType {
@@ -28,11 +28,13 @@ export class Elasticsearch implements INodeType {
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 		description: 'Consume the Elasticsearch API',
+		schemaPath: 'Elastic/Elasticsearch',
 		defaults: {
 			name: 'Elasticsearch',
 		},
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		usableAsTool: true,
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'elasticsearchApi',
@@ -146,11 +148,16 @@ export class Elasticsearch implements INodeType {
 					// const paginate = this.getNodeParameter('paginate', i) as boolean;
 
 					if (Object.keys(options).length) {
-						const { query, ...rest } = options;
+						const { query, queryParameters, ...rest } = options;
 						if (query) {
 							Object.assign(
 								body,
-								jsonParse(query, { errorMessage: "Invalid JSON in 'Query' option" }),
+								parseAndResolveQueryParameters(
+									query,
+									queryParameters ?? '[]',
+									this.getNode(),
+									i,
+								) as IDataObject,
 							);
 						}
 						Object.assign(qs, rest);
@@ -172,7 +179,7 @@ export class Elasticsearch implements INodeType {
 						} else {
 							responseData = await elasticsearchApiRequest.call(
 								this,
-								'GET',
+								'POST',
 								`/${indexId}/_search`,
 								body,
 								qs,
@@ -184,7 +191,7 @@ export class Elasticsearch implements INodeType {
 
 						responseData = await elasticsearchApiRequest.call(
 							this,
-							'GET',
+							'POST',
 							`/${indexId}/_search`,
 							body,
 							qs,

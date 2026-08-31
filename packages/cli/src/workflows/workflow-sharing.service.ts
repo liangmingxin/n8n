@@ -1,14 +1,21 @@
-import type { Scope } from '@n8n/permissions';
-// eslint-disable-next-line n8n-local-rules/misplaced-n8n-typeorm-import
+import { LicenseState } from '@n8n/backend-common';
+import type { User } from '@n8n/db';
+import { ProjectRelationRepository, SharedWorkflowRepository } from '@n8n/db';
+import { Service } from '@n8n/di';
+import {
+	hasGlobalScope,
+	type ProjectRole,
+	type WorkflowSharingRole,
+	type Scope,
+	PROJECT_OWNER_ROLE_SLUG,
+} from '@n8n/permissions';
 import { In } from '@n8n/typeorm';
-import { Service } from 'typedi';
 
-import type { ProjectRole } from '@/databases/entities/project-relation';
-import type { WorkflowSharingRole } from '@/databases/entities/shared-workflow';
-import type { User } from '@/databases/entities/user';
-import { ProjectRelationRepository } from '@/databases/repositories/project-relation.repository';
-import { SharedWorkflowRepository } from '@/databases/repositories/shared-workflow.repository';
 import { RoleService } from '@/services/role.service';
+
+export type ShareWorkflowOptions =
+	| { scopes: Scope[]; projectId?: string }
+	| { projectRoles: ProjectRole[]; workflowRoles: WorkflowSharingRole[]; projectId?: string };
 
 @Service()
 export class WorkflowSharingService {
@@ -16,6 +23,7 @@ export class WorkflowSharingService {
 		private readonly sharedWorkflowRepository: SharedWorkflowRepository,
 		private readonly roleService: RoleService,
 		private readonly projectRelationRepository: ProjectRelationRepository,
+		private readonly licenseState: LicenseState,
 	) {}
 
 	/**
@@ -26,15 +34,10 @@ export class WorkflowSharingService {
 	 *
 	 * Returns all IDs if user has the 'workflow:read' global scope.
 	 */
-	async getSharedWorkflowIds(
-		user: User,
-		options:
-			| { scopes: Scope[]; projectId?: string }
-			| { projectRoles: ProjectRole[]; workflowRoles: WorkflowSharingRole[]; projectId?: string },
-	): Promise<string[]> {
+	async getSharedWorkflowIds(user: User, options: ShareWorkflowOptions): Promise<string[]> {
 		const { projectId } = options;
 
-		if (user.hasGlobalScope('workflow:read')) {
+		if (hasGlobalScope(user, 'workflow:read')) {
 			const sharedWorkflows = await this.sharedWorkflowRepository.find({
 				select: ['workflowId'],
 				...(projectId && { where: { projectId } }),
@@ -44,11 +47,11 @@ export class WorkflowSharingService {
 
 		const projectRoles =
 			'scopes' in options
-				? this.roleService.rolesWithScope('project', options.scopes)
+				? await this.roleService.rolesWithScope('project', options.scopes)
 				: options.projectRoles;
 		const workflowRoles =
 			'scopes' in options
-				? this.roleService.rolesWithScope('workflow', options.scopes)
+				? await this.roleService.rolesWithScope('workflow', options.scopes)
 				: options.workflowRoles;
 
 		const sharedWorkflows = await this.sharedWorkflowRepository.find({
@@ -65,6 +68,43 @@ export class WorkflowSharingService {
 		});
 
 		return sharedWorkflows.map(({ workflowId }) => workflowId);
+	}
+
+	/**
+	 * Scope-based access list that respects whether sharing is licensed.
+	 * Without sharing, only owner-role workflows in projects the user owns.
+	 */
+	async getSharedWorkflowIdsForScopes(
+		user: User,
+		scopes: Scope[],
+		projectId?: string,
+	): Promise<string[]> {
+		if (this.licenseState.isSharingLicensed()) {
+			return await this.getSharedWorkflowIds(user, { scopes, projectId });
+		}
+
+		return await this.getSharedWorkflowIds(user, {
+			workflowRoles: ['workflow:owner'],
+			projectRoles: [PROJECT_OWNER_ROLE_SLUG],
+			projectId,
+		});
+	}
+
+	async getSharedWithMeIds(user: User) {
+		const sharedWithMeWorkflows = await this.sharedWorkflowRepository.find({
+			select: ['workflowId'],
+			where: {
+				role: 'workflow:editor',
+				project: {
+					projectRelations: {
+						userId: user.id,
+						role: { slug: PROJECT_OWNER_ROLE_SLUG },
+					},
+				},
+			},
+		});
+
+		return sharedWithMeWorkflows.map(({ workflowId }) => workflowId);
 	}
 
 	async getSharedWorkflowScopes(
@@ -89,5 +129,44 @@ export class WorkflowSharingService {
 				),
 			];
 		});
+	}
+
+	async getOwnedWorkflowsInPersonalProject(userId: string): Promise<string[]> {
+		const sharedWorkflows = await this.sharedWorkflowRepository.find({
+			select: ['workflowId'],
+			where: {
+				role: 'workflow:owner',
+				project: {
+					projectRelations: {
+						userId,
+						role: { slug: PROJECT_OWNER_ROLE_SLUG },
+					},
+				},
+			},
+		});
+		return sharedWorkflows.map(({ workflowId }) => workflowId);
+	}
+
+	/**
+	 * Resolve the roles granting `scope`. Returns `undefined` when the user's
+	 * global role already grants the scope, meaning no filtering is needed.
+	 */
+	async rolesGrantingScope(
+		user: User,
+		scope: Scope,
+	): Promise<{ projectRoles: string[]; workflowRoles: string[] } | undefined> {
+		if (hasGlobalScope(user, scope)) {
+			return undefined;
+		}
+
+		const [projectRoles, workflowRoles] = await Promise.all([
+			this.roleService.rolesWithScope('project', [scope]),
+			this.roleService.rolesWithScope('workflow', [scope]),
+		]);
+
+		return {
+			projectRoles,
+			workflowRoles,
+		};
 	}
 }

@@ -1,46 +1,42 @@
+import { inDevelopment, inProduction, ModuleRegistry } from '@n8n/backend-common';
+import { SecurityConfig } from '@n8n/config';
+import { HTML_NONCE_PLACEHOLDER, Time } from '@n8n/constants';
+import type { APIRequest, AuthenticatedRequest } from '@n8n/db';
+import { Container, Service } from '@n8n/di';
 import cookieParser from 'cookie-parser';
 import express from 'express';
-import { access as fsAccess } from 'fs/promises';
+import { access as fsAccess, readFile } from 'fs/promises';
 import helmet from 'helmet';
 import { InstanceSettings } from 'n8n-core';
 import { resolve } from 'path';
-import { Container, Service } from 'typedi';
 
 import { AbstractServer } from '@/abstract-server';
-import config from '@/config';
-import {
-	CLI_DIR,
-	EDITOR_UI_DIST_DIR,
-	inDevelopment,
-	inE2ETests,
-	inProduction,
-	N8N_VERSION,
-	Time,
-} from '@/constants';
+import { AuthService } from '@/auth/auth.service';
+import { CLI_DIR, EDITOR_UI_DIST_DIR, inE2ETests } from '@/constants';
+import { ControllerRegistry } from '@/controller.registry';
 import { CredentialsOverwrites } from '@/credentials-overwrites';
-import { ControllerRegistry } from '@/decorators';
 import { MessageEventBus } from '@/eventbus/message-event-bus/message-event-bus';
 import { EventService } from '@/events/event.service';
 import { LogStreamingEventRelay } from '@/events/relays/log-streaming.event-relay';
 import type { ICredentialsOverwrite } from '@/interfaces';
-import { isLdapEnabled } from '@/ldap/helpers.ee';
 import { LoadNodesAndCredentials } from '@/load-nodes-and-credentials';
 import { handleMfaDisable, isMfaFeatureEnabled } from '@/mfa/helpers';
+import { createContentSecurityPolicyMiddleware } from '@/middlewares/content-security-policy';
 import { PostHogClient } from '@/posthog';
-import { isApiEnabled, loadPublicApiVersions } from '@/public-api';
-import { setupPushServer, setupPushHandler, Push } from '@/push';
-import type { APIRequest } from '@/requests';
+import { loadPublicApiVersions } from '@/public-api';
+import { Push } from '@/push';
 import * as ResponseHelper from '@/response-helper';
+import { resolveContentSecurityPolicies } from '@/security/content-security-policy';
 import type { FrontendService } from '@/services/frontend.service';
-import { OrchestrationService } from '@/services/orchestration.service';
+import { Telemetry } from '@/telemetry';
 
 import '@/controllers/active-workflows.controller';
 import '@/controllers/annotation-tags.controller.ee';
 import '@/controllers/auth.controller';
 import '@/controllers/binary-data.controller';
-import '@/controllers/curl.controller';
 import '@/controllers/ai.controller';
 import '@/controllers/dynamic-node-parameters.controller';
+import '@/controllers/instance-ai-examples.controller';
 import '@/controllers/invitation.controller';
 import '@/controllers/me.controller';
 import '@/controllers/node-types.controller';
@@ -53,18 +49,34 @@ import '@/controllers/project.controller';
 import '@/controllers/role.controller';
 import '@/controllers/tags.controller';
 import '@/controllers/translation.controller';
+import '@/controllers/folder.controller';
 import '@/controllers/users.controller';
 import '@/controllers/user-settings.controller';
 import '@/controllers/workflow-statistics.controller';
 import '@/controllers/api-keys.controller';
+import '@/controllers/security-settings.controller';
 import '@/credentials/credentials.controller';
-import '@/eventbus/event-bus.controller';
 import '@/events/events.controller';
 import '@/executions/executions.controller';
-import '@/external-secrets/external-secrets.controller.ee';
+import '@/node-execution/ephemeral-node-executor';
 import '@/license/license.controller';
-import '@/workflows/workflow-history/workflow-history.controller.ee';
+import '@/evaluation.ee/test-runs.controller.ee';
+import '@/evaluation.ee/evaluation-config.controller';
+import '@/evaluation.ee/evaluation-collections.controller.ee';
+import '@/evaluation.ee/insights/eval-insights.controller.ee';
+import '@/workflows/workflow-history/workflow-history.controller';
 import '@/workflows/workflows.controller';
+import '@/modules/workflow-index/workflow-dependency.controller';
+import '@/webhooks/test-webhooks.controller';
+import '@/webhooks/webhooks.controller';
+
+import { ChatServer } from './chat/chat-server';
+import { MfaService } from './mfa/mfa.service';
+import { BrowserUseServer } from './modules/instance-ai/browser/browser-use-server';
+import { PubSubRegistry } from './scaling/pubsub/pubsub.registry';
+import { ApiKeyAuthStrategy } from './services/api-key-auth.strategy';
+import { AuthStrategyRegistry } from './services/auth-strategy.registry';
+import { SessionCookieAuthStrategy } from './services/session-cookie-auth.strategy';
 
 @Service()
 export class Server extends AbstractServer {
@@ -76,7 +88,6 @@ export class Server extends AbstractServer {
 
 	constructor(
 		private readonly loadNodesAndCredentials: LoadNodesAndCredentials,
-		private readonly orchestrationService: OrchestrationService,
 		private readonly postHogClient: PostHogClient,
 		private readonly eventService: EventService,
 		private readonly instanceSettings: InstanceSettings,
@@ -89,8 +100,10 @@ export class Server extends AbstractServer {
 
 	async start() {
 		if (!this.globalConfig.endpoints.disableUi) {
-			const { FrontendService } = await import('@/services/frontend.service');
+			const { FrontendService } = await import('@/services/frontend.service.js');
 			this.frontendService = Container.get(FrontendService);
+			await import('@/controllers/module-settings.controller.js');
+			await import('@/controllers/third-party-licenses.controller.js');
 		}
 
 		this.presetCredentialsLoaded = false;
@@ -104,91 +117,84 @@ export class Server extends AbstractServer {
 			void this.loadNodesAndCredentials.setupHotReload();
 		}
 
+		this.markAsReady();
+
 		this.eventService.emit('server-started');
 	}
 
 	private async registerAdditionalControllers() {
-		if (!inProduction && this.orchestrationService.isMultiMainSetupEnabled) {
-			await import('@/controllers/debug.controller');
-		}
-
-		if (isLdapEnabled()) {
-			const { LdapService } = await import('@/ldap/ldap.service.ee');
-			await import('@/ldap/ldap.controller.ee');
-			await Container.get(LdapService).init();
-		}
-
-		if (this.globalConfig.nodes.communityPackages.enabled) {
-			await import('@/controllers/community-packages.controller');
+		if (!inProduction && this.instanceSettings.isMultiMain) {
+			await import('@/controllers/debug.controller.js');
 		}
 
 		if (inE2ETests) {
-			await import('@/controllers/e2e.controller');
+			await import('@/controllers/e2e.controller.js');
 		}
 
 		if (isMfaFeatureEnabled()) {
-			await import('@/controllers/mfa.controller');
+			await Container.get(MfaService).init();
+			await import('@/controllers/mfa.controller.js');
 		}
 
 		if (!this.globalConfig.endpoints.disableUi) {
-			await import('@/controllers/cta.controller');
+			await import('@/controllers/cta.controller.js');
+		}
+
+		if (!this.globalConfig.tags.disabled) {
+			await import('@/controllers/tags.controller.js');
+		}
+
+		if (this.globalConfig.diagnostics.enabled) {
+			await import('@/controllers/telemetry.controller.js');
+			await import('@/controllers/posthog.controller.js');
 		}
 
 		// ----------------------------------------
-		// SAML
+		// Variables
 		// ----------------------------------------
 
-		// initialize SamlService if it is licensed, even if not enabled, to
-		// set up the initial environment
 		try {
-			const { SamlService } = await import('@/sso/saml/saml.service.ee');
-			await Container.get(SamlService).init();
-			await import('@/sso/saml/routes/saml.controller.ee');
+			await import('@/environments.ee/variables/variables.controller.ee.js');
 		} catch (error) {
-			this.logger.warn(`SAML initialization failed: ${(error as Error).message}`);
-		}
-
-		// ----------------------------------------
-		// Source Control
-		// ----------------------------------------
-		try {
-			const { SourceControlService } = await import(
-				'@/environments/source-control/source-control.service.ee'
-			);
-			await Container.get(SourceControlService).init();
-			await import('@/environments/source-control/source-control.controller.ee');
-			await import('@/environments/variables/variables.controller.ee');
-		} catch (error) {
-			this.logger.warn(`Source Control initialization failed: ${(error as Error).message}`);
+			this.logger.warn(`Variables initialization failed: ${(error as Error).message}`);
 		}
 	}
 
 	async configure(): Promise<void> {
 		if (this.globalConfig.endpoints.metrics.enable) {
-			const { PrometheusMetricsService } = await import('@/metrics/prometheus-metrics.service');
-			await Container.get(PrometheusMetricsService).init(this.app);
+			const { PrometheusMetricsService } = await import('@/metrics/prometheus/index.js');
+			Container.get(PrometheusMetricsService).init(this.app);
 		}
 
 		const { frontendService } = this;
 		if (frontendService) {
-			await this.externalHooks.run('frontend.settings', [frontendService.getSettings()]);
+			const frontendSettings = await frontendService.getSettings();
+			await this.externalHooks.run('frontend.settings', [frontendSettings]);
+
+			if (this.globalConfig.deployment.type === 'cloud') {
+				Container.get(Telemetry).setUserCloudId(frontendSettings.n8nMetadata?.userId);
+			}
 		}
 
 		await this.postHogClient.init();
+		this.postHogClient.setupExpressSessionContext(this.app);
 
 		const publicApiEndpoint = this.globalConfig.publicApi.path;
 
-		// ----------------------------------------
-		// Public API
-		// ----------------------------------------
+		// Register auth strategies in priority order. The registry evaluates them
+		// sequentially — the first strategy that returns a non-null result wins.
+		// API key auth is registered first so existing behavior is preserved.
+		// Session cookie auth is registered last: an explicit but wrong API
+		// key/bearer token fails fast rather than silently falling back to an
+		// ambient browser session cookie.
+		// Additional strategies (e.g. scoped JWT from the token-exchange module)
+		// can be appended later during their own module initialization.
+		const registry = Container.get(AuthStrategyRegistry);
+		registry.register(Container.get(ApiKeyAuthStrategy));
+		registry.register(Container.get(SessionCookieAuthStrategy));
 
-		if (isApiEnabled()) {
-			const { apiRouters, apiLatestVersion } = await loadPublicApiVersions(publicApiEndpoint);
-			this.app.use(...apiRouters);
-			if (frontendService) {
-				frontendService.settings.publicApi.latestVersion = apiLatestVersion;
-			}
-		}
+		// Parse cookies for easier access
+		this.app.use(cookieParser());
 
 		// Extract BrowserId from headers
 		this.app.use((req: APIRequest, _, next) => {
@@ -196,15 +202,40 @@ export class Server extends AbstractServer {
 			next();
 		});
 
-		// Parse cookies for easier access
-		this.app.use(cookieParser());
+		// Installed here on purpose, and the order is the mechanism: `AbstractServer` has
+		// already registered the webhook and form routes, so they never reach this
+		// middleware. Those pages serve HTML that a workflow author wrote, which the
+		// instance policy must not constrain - including when the `sandbox` policy is
+		// switched off with `N8N_INSECURE_DISABLE_*_SANDBOX`, where they carry no policy
+		// at all. Moving this line above `AbstractServer` would silently change that.
+		const securityConfig = Container.get(SecurityConfig);
+		this.app.use(
+			createContentSecurityPolicyMiddleware(
+				resolveContentSecurityPolicies(
+					securityConfig.contentSecurityPolicy,
+					securityConfig.contentSecurityPolicyReportOnly,
+					this.logger,
+				),
+			),
+		);
+
+		// ----------------------------------------
+		// Public API
+		// ----------------------------------------
+
+		const { apiRouters, apiLatestVersion } = await loadPublicApiVersions(publicApiEndpoint);
+		this.app.use(...apiRouters);
+		if (frontendService) {
+			(await frontendService.getSettings()).publicApi.latestVersion = apiLatestVersion;
+		}
 
 		const { restEndpoint, app } = this;
-		setupPushHandler(restEndpoint, app);
 
 		const push = Container.get(Push);
+		push.setupPushHandler(restEndpoint, app);
+
 		if (push.isBidirectional) {
-			const { CollaborationService } = await import('@/collaboration/collaboration.service');
+			const { CollaborationService } = await import('@/collaboration/collaboration.service.js');
 
 			const collaborationService = Container.get(CollaborationService);
 			collaborationService.init();
@@ -214,14 +245,17 @@ export class Server extends AbstractServer {
 			);
 		}
 
-		if (config.getEnv('executions.mode') === 'queue') {
-			const { ScalingService } = await import('@/scaling/scaling.service');
+		if (this.globalConfig.executions.mode === 'queue') {
+			const { ScalingService } = await import('@/scaling/scaling.service.js');
 			await Container.get(ScalingService).setupQueue();
 		}
 
 		await handleMfaDisable();
 
 		await this.registerAdditionalControllers();
+
+		// Reinitialize the PubSubRegistry
+		Container.get(PubSubRegistry).init();
 
 		// register all known controllers
 		Container.get(ControllerRegistry).activate(app);
@@ -232,34 +266,11 @@ export class Server extends AbstractServer {
 
 		// Returns all the available timezones
 		const tzDataFile = resolve(CLI_DIR, 'dist/timezones.json');
-		this.app.get(`/${this.restEndpoint}/options/timezones`, (_, res) => res.sendFile(tzDataFile));
+		this.app.get(`/${this.restEndpoint}/options/timezones`, (_, res) =>
+			res.sendFile(tzDataFile, { dotfiles: 'allow' }),
+		);
 
-		// ----------------------------------------
-		// Settings
-		// ----------------------------------------
-
-		if (frontendService) {
-			// Returns the current settings for the UI
-			this.app.get(
-				`/${this.restEndpoint}/settings`,
-				ResponseHelper.send(async () => frontendService.getSettings()),
-			);
-
-			// Return Sentry config as a static file
-			this.app.get(`/${this.restEndpoint}/sentry.js`, (_, res) => {
-				res.type('js');
-				res.write('window.sentry=');
-				res.write(
-					JSON.stringify({
-						dsn: this.globalConfig.sentry.frontendDsn,
-						environment: process.env.ENVIRONMENT || 'development',
-						serverName: process.env.DEPLOYMENT_NAME,
-						release: N8N_VERSION,
-					}),
-				);
-				res.end();
-			});
-		}
+		this.configureSettingsRoute();
 
 		// ----------------------------------------
 		// EventBus Setup
@@ -268,33 +279,61 @@ export class Server extends AbstractServer {
 		await eventBus.initialize();
 		Container.get(LogStreamingEventRelay).init();
 
+		// ----------------------------------------
+		// Workflow Indexing Setup
+		// ----------------------------------------
+		await this.initializeWorkflowIndexing();
+
 		if (this.endpointPresetCredentials !== '') {
 			// POST endpoint to set preset credentials
+			const overwriteEndpointMiddleware =
+				Container.get(CredentialsOverwrites).getOverwriteEndpointMiddleware();
+
+			if (overwriteEndpointMiddleware) {
+				this.app.use(`/${this.endpointPresetCredentials}`, overwriteEndpointMiddleware);
+			}
+
+			const authenticationEnforced = overwriteEndpointMiddleware !== null;
 			this.app.post(
 				`/${this.endpointPresetCredentials}`,
 				async (req: express.Request, res: express.Response) => {
-					if (!this.presetCredentialsLoaded) {
-						const body = req.body as ICredentialsOverwrite;
+					try {
+						// If authentication is enforced we can allow multiple overwrites
+						if (!this.presetCredentialsLoaded || authenticationEnforced) {
+							const body = req.body as ICredentialsOverwrite;
 
-						if (req.contentType !== 'application/json') {
+							if (req.contentType !== 'application/json') {
+								ResponseHelper.sendErrorResponse(
+									res,
+									new Error(
+										'Body must be a valid JSON, make sure the content-type is application/json',
+									),
+								);
+								return;
+							}
+
+							await Container.get(CredentialsOverwrites).setData(body, true, true);
+
+							this.presetCredentialsLoaded = true;
+
+							// Send push event to notify frontend to refetch types
+							Container.get(Push).broadcast({ type: 'nodeDescriptionUpdated', data: {} });
+
+							ResponseHelper.sendSuccessResponse(res, { success: true }, true, 200);
+						} else {
 							ResponseHelper.sendErrorResponse(
 								res,
-								new Error(
-									'Body must be a valid JSON, make sure the content-type is application/json',
-								),
+								new Error('Preset credentials can be set once'),
 							);
-							return;
 						}
-
-						Container.get(CredentialsOverwrites).setData(body);
-
-						await frontendService?.generateTypes();
-
-						this.presetCredentialsLoaded = true;
-
-						ResponseHelper.sendSuccessResponse(res, { success: true }, true, 200);
-					} else {
-						ResponseHelper.sendErrorResponse(res, new Error('Preset credentials can be set once'));
+					} catch (error) {
+						this.logger.error('Error handling credentials overwrite', { error });
+						ResponseHelper.sendErrorResponse(
+							res,
+							new Error(
+								'An error occurred while handling credentials overwrite, please check the logs for more details',
+							),
+						);
 					}
 				},
 			);
@@ -303,27 +342,73 @@ export class Server extends AbstractServer {
 		const maxAge = Time.days.toMilliseconds;
 		const cacheOptions = inE2ETests || inDevelopment ? {} : { maxAge };
 		const { staticCacheDir } = Container.get(InstanceSettings);
+
+		// Protect type files with authentication regardless of UI availability
+		const authService = Container.get(AuthService);
+		const protectedTypeFiles = [
+			'/types/nodes.json',
+			'/types/credentials.json',
+			'/types/node-versions.json',
+		];
+		protectedTypeFiles.forEach((path) => {
+			this.app.get(
+				path,
+				authService.createAuthMiddleware({ allowSkipMFA: true, allowSkipPreviewAuth: true }),
+				async (_, res: express.Response) => {
+					res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+					res.sendFile(path.substring(1), {
+						root: staticCacheDir,
+					});
+				},
+			);
+		});
+
 		if (frontendService) {
-			const serveIcons: express.RequestHandler = async (req, res) => {
-				// eslint-disable-next-line prefer-const
-				let { scope, packageName } = req.params;
-				if (scope) packageName = `@${scope}/${packageName}`;
-				const filePath = this.loadNodesAndCredentials.resolveIcon(packageName, req.originalUrl);
+			this.app.use(
+				[
+					'/icons/{@:scope/}:packageName/*path/*file.svg',
+					'/icons/{@:scope/}:packageName/*path/*file.png',
+				],
+				async (req, res) => {
+					// eslint-disable-next-line prefer-const
+					let { scope, packageName } = req.params;
+					if (scope) packageName = `@${scope}/${packageName}`;
+					const filePath = this.loadNodesAndCredentials.resolveIcon(packageName, req.originalUrl);
+					if (filePath) {
+						try {
+							await fsAccess(filePath);
+							return res.sendFile(filePath, { maxAge, dotfiles: 'allow' });
+						} catch {}
+					}
+					res.sendStatus(404);
+				},
+			);
+
+			const serveSchemas: express.RequestHandler = async (req, res) => {
+				const { node, version, resource, operation } = req.params;
+				const filePath = this.loadNodesAndCredentials.resolveSchema({
+					node,
+					resource,
+					operation,
+					version,
+				});
+
 				if (filePath) {
 					try {
 						await fsAccess(filePath);
-						return res.sendFile(filePath, cacheOptions);
+						return res.sendFile(filePath, { ...cacheOptions, dotfiles: 'allow' });
 					} catch {}
 				}
 				res.sendStatus(404);
 			};
-
-			this.app.use('/icons/@:scope/:packageName/*/*.(svg|png)', serveIcons);
-			this.app.use('/icons/:packageName/*/*.(svg|png)', serveIcons);
+			this.app.use('/schemas/:node/:version{/:resource}{/:operation}.json', serveSchemas);
 
 			const isTLSEnabled =
 				this.globalConfig.protocol === 'https' && !!(this.sslKey && this.sslCert);
 			const isPreviewMode = process.env.N8N_PREVIEW_MODE === 'true';
+			const crossOriginOpenerPolicy = Container.get(SecurityConfig).crossOriginOpenerPolicy;
+			// `createContentSecurityPolicyMiddleware` serves the CSP instead: helmet cannot
+			// inject a per-request nonce.
 			const securityHeadersMiddleware = helmet({
 				contentSecurityPolicy: false,
 				xFrameOptions:
@@ -342,37 +427,65 @@ export class Server extends AbstractServer {
 							preload: false,
 						}
 					: false,
+				crossOriginOpenerPolicy: {
+					policy: crossOriginOpenerPolicy,
+				},
 			});
 
 			// Route all UI urls to index.html to support history-api
-			const nonUIRoutes: Readonly<string[]> = [
+			const nonUIRoutes: readonly string[] = [
 				'favicon.ico',
 				'assets',
 				'static',
 				'types',
-				'healthz',
+				this.endpointHealth,
 				'metrics',
 				'e2e',
 				this.restEndpoint,
 				this.endpointPresetCredentials,
-				isApiEnabled() ? '' : publicApiEndpoint,
 				...this.globalConfig.endpoints.additionalNonUIRoutes.split(':'),
 			].filter((u) => !!u);
 			const nonUIRoutesRegex = new RegExp(`^/(${nonUIRoutes.join('|')})/?.*$`);
-			const historyApiHandler: express.RequestHandler = (req, res, next) => {
+
+			// `index.html` does not change while n8n runs. Read it once and keep it split
+			// around the nonce placeholders, so serving a request is only a join.
+			let indexHtmlParts: string[] | undefined;
+			const indexHtmlTemplate = async () => {
+				indexHtmlParts ??= (await readFile(resolve(staticCacheDir, 'index.html'), 'utf8')).split(
+					HTML_NONCE_PLACEHOLDER,
+				);
+				return indexHtmlParts;
+			};
+
+			const historyApiHandler: express.RequestHandler = async (req, res, next) => {
 				const {
 					method,
 					headers: { accept },
 				} = req;
+				// A request with no `Accept` also gets the page. Only this handler fills in the
+				// nonce placeholders, so `express.static` would serve `index.html` with the
+				// placeholders intact, and no script on it could run under the CSP.
 				if (
 					method === 'GET' &&
-					accept &&
-					(accept.includes('text/html') || accept.includes('*/*')) &&
+					(!accept || req.accepts('html') || accept.includes('*/*')) &&
+					!req.path.endsWith('.wasm') &&
 					!nonUIRoutesRegex.test(req.path)
 				) {
-					res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+					res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, proxy-revalidate');
+
+					let template: string[];
+					try {
+						template = await indexHtmlTemplate();
+					} catch (error) {
+						this.logger.error('Could not read index.html', { error });
+						res.sendStatus(500);
+						return;
+					}
+
+					// Only the placeholders the build wrote get the nonce. Markup that arrived
+					// any other way must not get one.
 					securityHeadersMiddleware(req, res, () => {
-						res.sendFile('index.html', { root: staticCacheDir, maxAge, lastModified: true });
+						res.type('html').send(template.join(res.locals.cspNonce));
 					});
 				} else {
 					next();
@@ -398,8 +511,37 @@ export class Server extends AbstractServer {
 		}
 	}
 
+	private configureSettingsRoute() {
+		const { frontendService } = this;
+		const authService = Container.get(AuthService);
+
+		if (frontendService) {
+			// Returns the current settings for the UI
+			this.app.get(
+				`/${this.restEndpoint}/settings`,
+				authService.createAuthMiddleware({ allowSkipMFA: false, allowUnauthenticated: true }),
+				ResponseHelper.send(async (req: AuthenticatedRequest) => {
+					return req.user
+						? await frontendService.getSettings()
+						: await frontendService.getPublicSettings(!!req.authInfo?.mfaEnrollmentRequired);
+				}),
+			);
+		}
+	}
+
+	private async initializeWorkflowIndexing() {
+		const { WorkflowIndexService } = await import(
+			'@/modules/workflow-index/workflow-index.service.js'
+		);
+		Container.get(WorkflowIndexService).init();
+	}
+
 	protected setupPushServer(): void {
 		const { restEndpoint, server, app } = this;
-		setupPushServer(restEndpoint, server, app);
+		Container.get(Push).setupPushServer(restEndpoint, server, app);
+		Container.get(ChatServer).setup(server, app);
+		if (Container.get(ModuleRegistry).isActive('instance-ai')) {
+			Container.get(BrowserUseServer).setup(server, app);
+		}
 	}
 }

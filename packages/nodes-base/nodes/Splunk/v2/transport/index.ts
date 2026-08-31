@@ -7,8 +7,9 @@ import type {
 	IHttpRequestOptions,
 	IRequestOptions,
 } from 'n8n-workflow';
-import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
+import { sleep } from '@n8n/utils/sleep';
 import type { SplunkCredentials, SplunkError } from '../helpers/interfaces';
 import { extractErrorDescription, formatEntry, parseXml } from '../helpers/utils';
 
@@ -19,9 +20,8 @@ export async function splunkApiRequest(
 	body: IDataObject = {},
 	qs: IDataObject = {},
 ): Promise<any> {
-	const { baseUrl, allowUnauthorizedCerts } = (await this.getCredentials(
-		'splunkApi',
-	)) as SplunkCredentials;
+	const { baseUrl, allowUnauthorizedCerts } =
+		await this.getCredentials<SplunkCredentials>('splunkApi');
 
 	const options: IRequestOptions = {
 		headers: {
@@ -95,9 +95,8 @@ export async function splunkApiJsonRequest(
 	body: IDataObject = {},
 	qs: IDataObject = {},
 ) {
-	const { baseUrl, allowUnauthorizedCerts } = (await this.getCredentials(
-		'splunkApi',
-	)) as SplunkCredentials;
+	const { baseUrl, allowUnauthorizedCerts } =
+		await this.getCredentials<SplunkCredentials>('splunkApi');
 
 	qs.output_mode = 'json';
 

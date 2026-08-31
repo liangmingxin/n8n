@@ -1,8 +1,5 @@
+import { kebabCase, snakeCase } from 'change-case';
 import { createHash } from 'crypto';
-import { paramCase, snakeCase } from 'change-case';
-
-import { Builder } from 'xml2js';
-
 import type {
 	IDataObject,
 	IExecuteFunctions,
@@ -11,15 +8,13 @@ import type {
 	INodeTypeDescription,
 	JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError, NodeConnectionType, NodeOperationError } from 'n8n-workflow';
-
-import { bucketFields, bucketOperations } from '../Aws/S3/V1/BucketDescription';
-
-import { folderFields, folderOperations } from '../Aws/S3/V1/FolderDescription';
-
-import { fileFields, fileOperations } from '../Aws/S3/V1/FileDescription';
+import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+import { Builder } from 'xml2js';
 
 import { s3ApiRequestREST, s3ApiRequestSOAP, s3ApiRequestSOAPAllItems } from './GenericFunctions';
+import { bucketFields, bucketOperations } from '../Aws/S3/V1/BucketDescription';
+import { fileFields, fileOperations } from '../Aws/S3/V1/FileDescription';
+import { folderFields, folderOperations } from '../Aws/S3/V1/FolderDescription';
 
 export class S3 implements INodeType {
 	description: INodeTypeDescription = {
@@ -34,8 +29,9 @@ export class S3 implements INodeType {
 		defaults: {
 			name: 'S3',
 		},
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		usableAsTool: true,
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 's3',
@@ -107,7 +103,7 @@ export class S3 implements INodeType {
 						const name = this.getNodeParameter('name', i) as string;
 						const additionalFields = this.getNodeParameter('additionalFields', i);
 						if (additionalFields.acl) {
-							headers['x-amz-acl'] = paramCase(additionalFields.acl as string);
+							headers['x-amz-acl'] = kebabCase(additionalFields.acl as string);
 						}
 						if (additionalFields.bucketObjectLockEnabled) {
 							headers['x-amz-bucket-object-lock-enabled'] =
@@ -165,6 +161,18 @@ export class S3 implements INodeType {
 						);
 						returnData.push(...executionData);
 						// returnData.push({ success: true });
+					}
+					//https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucket.html
+					if (operation === 'delete') {
+						const name = this.getNodeParameter('name', i) as string;
+
+						await s3ApiRequestSOAP.call(this, name, 'DELETE', '', '', {}, headers);
+
+						const executionData = this.helpers.constructExecutionMetaData(
+							this.helpers.returnJsonArray({ success: true }),
+							{ itemData: { item: i } },
+						);
+						returnData.push(...executionData);
 					}
 					//https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListBuckets.html
 					if (operation === 'getAll') {
@@ -233,7 +241,7 @@ export class S3 implements INodeType {
 							location: '',
 						});
 
-						const region = responseData.LocationConstraint._ as string;
+						const region = responseData.LocationConstraint?._ as string | undefined;
 
 						if (returnAll) {
 							responseData = await s3ApiRequestSOAPAllItems.call(
@@ -299,7 +307,7 @@ export class S3 implements INodeType {
 							location: '',
 						});
 
-						const region = responseData.LocationConstraint._;
+						const region = responseData.LocationConstraint?._;
 
 						responseData = await s3ApiRequestSOAP.call(
 							this,
@@ -328,7 +336,7 @@ export class S3 implements INodeType {
 							location: '',
 						});
 
-						const region = responseData.LocationConstraint._;
+						const region = responseData.LocationConstraint?._;
 
 						responseData = await s3ApiRequestSOAPAllItems.call(
 							this,
@@ -424,7 +432,7 @@ export class S3 implements INodeType {
 							location: '',
 						});
 
-						const region = responseData.LocationConstraint._;
+						const region = responseData.LocationConstraint?._;
 
 						if (returnAll) {
 							responseData = await s3ApiRequestSOAPAllItems.call(
@@ -489,7 +497,7 @@ export class S3 implements INodeType {
 							).toUpperCase();
 						}
 						if (additionalFields.acl) {
-							headers['x-amz-acl'] = paramCase(additionalFields.acl as string);
+							headers['x-amz-acl'] = kebabCase(additionalFields.acl as string);
 						}
 						if (additionalFields.grantFullControl) {
 							headers['x-amz-grant-full-control'] = '';
@@ -562,7 +570,7 @@ export class S3 implements INodeType {
 							location: '',
 						});
 
-						const region = responseData.LocationConstraint._;
+						const region = responseData.LocationConstraint?._;
 
 						responseData = await s3ApiRequestSOAP.call(
 							this,
@@ -601,7 +609,7 @@ export class S3 implements INodeType {
 							location: '',
 						});
 
-						region = region.LocationConstraint._;
+						region = region.LocationConstraint?._;
 
 						const response = await s3ApiRequestREST.call(
 							this,
@@ -660,7 +668,7 @@ export class S3 implements INodeType {
 							location: '',
 						});
 
-						const region = responseData.LocationConstraint._;
+						const region = responseData.LocationConstraint?._;
 
 						responseData = await s3ApiRequestSOAP.call(
 							this,
@@ -703,7 +711,7 @@ export class S3 implements INodeType {
 							location: '',
 						});
 
-						const region = responseData.LocationConstraint._;
+						const region = responseData.LocationConstraint?._;
 
 						if (returnAll) {
 							responseData = await s3ApiRequestSOAPAllItems.call(
@@ -773,7 +781,7 @@ export class S3 implements INodeType {
 							).toUpperCase();
 						}
 						if (additionalFields.acl) {
-							headers['x-amz-acl'] = paramCase(additionalFields.acl as string);
+							headers['x-amz-acl'] = kebabCase(additionalFields.acl as string);
 						}
 						if (additionalFields.grantFullControl) {
 							headers['x-amz-grant-full-control'] = '';
@@ -837,7 +845,7 @@ export class S3 implements INodeType {
 							location: '',
 						});
 
-						const region = responseData.LocationConstraint._;
+						const region = responseData.LocationConstraint?._;
 
 						if (isBinaryData) {
 							const binaryPropertyName = this.getNodeParameter('binaryPropertyName', 0);

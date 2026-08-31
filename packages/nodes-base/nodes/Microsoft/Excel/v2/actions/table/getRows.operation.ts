@@ -4,9 +4,12 @@ import type {
 	INodeExecutionData,
 	INodeProperties,
 } from 'n8n-workflow';
+
+import { updateDisplayOptions } from '@utils/utilities';
+
+import { stampItemIndexOnError } from '../../../../GenericFunctions';
 import { microsoftApiRequest, microsoftApiRequestAllItemsSkip } from '../../transport';
 import { tableRLC, workbookRLC, worksheetRLC } from '../common.descriptions';
-import { updateDisplayOptions } from '@utils/utilities';
 
 const properties: INodeProperties[] = [
 	workbookRLC,
@@ -145,6 +148,7 @@ export async function execute(
 					`/drive/items/${workbookId}/workbook/worksheets/${worksheetId}/tables/${tableId}/rows`,
 					{},
 					qs,
+					i,
 				);
 			} else {
 				const rowsQs = { ...qs };
@@ -155,6 +159,9 @@ export async function execute(
 					`/drive/items/${workbookId}/workbook/worksheets/${worksheetId}/tables/${tableId}/rows`,
 					{},
 					rowsQs,
+					undefined,
+					undefined,
+					i,
 				);
 				responseData = responseData.value;
 			}
@@ -169,6 +176,7 @@ export async function execute(
 					`/drive/items/${workbookId}/workbook/worksheets/${worksheetId}/tables/${tableId}/columns`,
 					{},
 					columnsQs,
+					i,
 				);
 
 				columns = (columns as IDataObject[]).map((column) => column.name);
@@ -218,7 +226,8 @@ export async function execute(
 				returnData.push(...executionErrorData);
 				continue;
 			}
-			throw error;
+			// A NodeError from the transport may be missing the itemIndex, add it
+			throw stampItemIndexOnError(error, i);
 		}
 	}
 

@@ -1,17 +1,18 @@
-import { mock } from 'jest-mock-extended';
 import { normalizeItems } from 'n8n-core';
 import {
-	ApplicationError,
-	type IExecuteFunctions,
+	UnexpectedError,
+	type ISupplyDataFunctions,
 	type IWorkflowDataProxyData,
 } from 'n8n-workflow';
+import { mock } from 'vitest-mock-extended';
 
-import { N8nItemListOutputParser } from '../../../../utils/output_parsers/N8nItemListOutputParser';
+import { N8nItemListOutputParser } from '@utils/output_parsers/N8nItemListOutputParser';
+
 import { OutputParserItemList } from '../OutputParserItemList.node';
 
 describe('OutputParserItemList', () => {
 	let outputParser: OutputParserItemList;
-	const thisArg = mock<IExecuteFunctions>({
+	const thisArg = mock<ISupplyDataFunctions>({
 		helpers: { normalizeItems },
 	});
 	const workflowDataProxy = mock<IWorkflowDataProxyData>({ $input: mock() });
@@ -30,11 +31,12 @@ describe('OutputParserItemList', () => {
 				if (parameterName === 'options') {
 					return {};
 				}
-				throw new ApplicationError('Not implemented');
+				throw new UnexpectedError('Not implemented');
 			});
 
 			const { response } = await outputParser.supplyData.call(thisArg, 0);
 			expect(response).toBeInstanceOf(N8nItemListOutputParser);
+			expect((response as any).numberOfItems).toBe(3);
 		});
 
 		it('should create a parser with custom number of items', async () => {
@@ -42,7 +44,7 @@ describe('OutputParserItemList', () => {
 				if (parameterName === 'options') {
 					return { numberOfItems: 5 };
 				}
-				throw new ApplicationError('Not implemented');
+				throw new UnexpectedError('Not implemented');
 			});
 
 			const { response } = await outputParser.supplyData.call(thisArg, 0);
@@ -50,12 +52,26 @@ describe('OutputParserItemList', () => {
 			expect((response as any).numberOfItems).toBe(5);
 		});
 
+		it('should create a parser with unlimited number of items', async () => {
+			thisArg.getNodeParameter.mockImplementation((parameterName) => {
+				if (parameterName === 'options') {
+					return { numberOfItems: -1 };
+				}
+
+				throw new UnexpectedError('Not implemented');
+			});
+
+			const { response } = await outputParser.supplyData.call(thisArg, 0);
+			expect(response).toBeInstanceOf(N8nItemListOutputParser);
+			expect((response as any).numberOfItems).toBeUndefined();
+		});
+
 		it('should create a parser with custom separator', async () => {
 			thisArg.getNodeParameter.mockImplementation((parameterName) => {
 				if (parameterName === 'options') {
 					return { separator: ',' };
 				}
-				throw new ApplicationError('Not implemented');
+				throw new UnexpectedError('Not implemented');
 			});
 
 			const { response } = await outputParser.supplyData.call(thisArg, 0);
@@ -70,7 +86,7 @@ describe('OutputParserItemList', () => {
 				if (parameterName === 'options') {
 					return {};
 				}
-				throw new ApplicationError('Not implemented');
+				throw new UnexpectedError('Not implemented');
 			});
 
 			const { response } = await outputParser.supplyData.call(thisArg, 0);
@@ -83,7 +99,7 @@ describe('OutputParserItemList', () => {
 				if (parameterName === 'options') {
 					return { separator: ',' };
 				}
-				throw new ApplicationError('Not implemented');
+				throw new UnexpectedError('Not implemented');
 			});
 
 			const { response } = await outputParser.supplyData.call(thisArg, 0);
@@ -96,7 +112,7 @@ describe('OutputParserItemList', () => {
 				if (parameterName === 'options') {
 					return { numberOfItems: 2 };
 				}
-				throw new ApplicationError('Not implemented');
+				throw new UnexpectedError('Not implemented');
 			});
 
 			const { response } = await outputParser.supplyData.call(thisArg, 0);
@@ -111,7 +127,7 @@ describe('OutputParserItemList', () => {
 				if (parameterName === 'options') {
 					return { numberOfItems: 5 };
 				}
-				throw new ApplicationError('Not implemented');
+				throw new UnexpectedError('Not implemented');
 			});
 
 			const { response } = await outputParser.supplyData.call(thisArg, 0);

@@ -1,4 +1,5 @@
-import cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
+import get from 'lodash/get';
 import type {
 	INodeExecutionData,
 	IExecuteFunctions,
@@ -7,12 +8,13 @@ import type {
 	IDataObject,
 	INodeProperties,
 } from 'n8n-workflow';
-import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
-import get from 'lodash/get';
-import { placeholder } from './placeholder';
-import { getValue } from './utils';
-import type { IValueData } from './types';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+
 import { getResolvables, sanitizeDataPathKey } from '@utils/utilities';
+
+import { placeholder } from './placeholder';
+import type { IValueData } from './types';
+import { getValue } from './utils';
 
 export const capitalizeHeader = (header: string, capitalize?: boolean) => {
 	if (!capitalize) return header;
@@ -125,7 +127,8 @@ export class Html implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'HTML',
 		name: 'html',
-		icon: { light: 'file:html.svg', dark: 'file:html.dark.svg' },
+		icon: 'node:html',
+		iconColor: 'rust',
 		group: ['transform'],
 		version: [1, 1.1, 1.2],
 		subtitle: '={{ $parameter["operation"] }}',
@@ -133,8 +136,8 @@ export class Html implements INodeType {
 		defaults: {
 			name: 'HTML',
 		},
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		parameterPane: 'wide',
 		properties: [
 			{
@@ -171,6 +174,10 @@ export class Html implements INodeType {
 				default: placeholder,
 				noDataExpression: true,
 				description: 'HTML template to render',
+				builderHint: {
+					propertyHint:
+						'Use expressions to generate loops, reference data, etc. Does not support handlebars.',
+				},
 				displayOptions: {
 					show: {
 						operation: ['generateHtmlTemplate'],

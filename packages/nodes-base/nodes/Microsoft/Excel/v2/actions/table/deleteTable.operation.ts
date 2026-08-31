@@ -1,7 +1,10 @@
 import type { IExecuteFunctions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
+
+import { updateDisplayOptions } from '@utils/utilities';
+
+import { stampItemIndexOnError } from '../../../../GenericFunctions';
 import { microsoftApiRequest } from '../../transport';
 import { tableRLC, workbookRLC, worksheetRLC } from '../common.descriptions';
-import { updateDisplayOptions } from '@utils/utilities';
 
 const properties: INodeProperties[] = [workbookRLC, worksheetRLC, tableRLC];
 
@@ -38,6 +41,11 @@ export async function execute(
 				this,
 				'DELETE',
 				`/drive/items/${workbookId}/workbook/worksheets/${worksheetId}/tables/${tableId}`,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				i,
 			);
 
 			const executionData = this.helpers.constructExecutionMetaData(
@@ -55,7 +63,8 @@ export async function execute(
 				returnData.push(...executionErrorData);
 				continue;
 			}
-			throw error;
+			// A NodeError from the transport may be missing the itemIndex, add it
+			throw stampItemIndexOnError(error, i);
 		}
 	}
 

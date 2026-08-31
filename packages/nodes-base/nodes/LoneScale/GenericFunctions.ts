@@ -1,5 +1,5 @@
 import {
-	ApplicationError,
+	OperationalError,
 	type IHttpRequestMethods,
 	type IDataObject,
 	type IExecuteFunctions,
@@ -8,6 +8,7 @@ import {
 	type IWebhookFunctions,
 	type IRequestOptions,
 } from 'n8n-workflow';
+
 import { BASE_URL } from './constants';
 
 export async function lonescaleApiRequest(
@@ -44,7 +45,7 @@ export async function lonescaleApiRequest(
 		if (error.response) {
 			const errorMessage =
 				error.response.body.message || error.response.body.description || error.message;
-			throw new ApplicationError(
+			throw new OperationalError(
 				`Autopilot error response [${error.statusCode}]: ${errorMessage}`,
 				{ level: 'warning' },
 			);

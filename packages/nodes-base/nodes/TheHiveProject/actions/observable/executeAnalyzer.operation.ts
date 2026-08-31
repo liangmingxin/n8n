@@ -4,9 +4,12 @@ import type {
 	INodeExecutionData,
 	INodeProperties,
 } from 'n8n-workflow';
-import { observableRLC, observableTypeOptions } from '../../descriptions';
-import { theHiveApiRequest } from '../../transport';
+
 import { updateDisplayOptions, wrapData } from '@utils/utilities';
+
+import { observableRLC, observableTypeOptions } from '../../descriptions';
+import { parseAnalyzers } from '../../helpers/utils';
+import { theHiveApiRequest } from '../../transport';
 
 const properties: INodeProperties[] = [
 	observableRLC,
@@ -47,13 +50,7 @@ export async function execute(this: IExecuteFunctions, i: number): Promise<INode
 		extractValue: true,
 	}) as string;
 
-	const analyzers = (this.getNodeParameter('analyzers', i) as string[]).map((analyzer) => {
-		const parts = analyzer.split('::');
-		return {
-			analyzerId: parts[0],
-			cortexId: parts[1],
-		};
-	});
+	const analyzers = parseAnalyzers(this.getNodeParameter('analyzers', i) as string | string[]);
 	let response: any;
 	let body: IDataObject;
 

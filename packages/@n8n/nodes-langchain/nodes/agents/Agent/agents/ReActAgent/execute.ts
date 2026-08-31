@@ -1,24 +1,21 @@
 import type { BaseLanguageModel } from '@langchain/core/language_models/base';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import type { BaseOutputParser } from '@langchain/core/output_parsers';
 import { PromptTemplate } from '@langchain/core/prompts';
-import { AgentExecutor, ChatAgent, ZeroShotAgent } from 'langchain/agents';
-import { CombiningOutputParser } from 'langchain/output_parsers';
+import { AgentExecutor, ChatAgent, ZeroShotAgent } from '@langchain/classic/agents';
 import {
 	type IExecuteFunctions,
 	type INodeExecutionData,
-	NodeConnectionType,
+	NodeConnectionTypes,
 	NodeOperationError,
 } from 'n8n-workflow';
 
-import {
-	getConnectedTools,
-	getPromptInputByType,
-	isChatInstance,
-} from '../../../../../utils/helpers';
-import { getOptionalOutputParsers } from '../../../../../utils/output_parsers/N8nOutputParser';
-import { throwIfToolSchema } from '../../../../../utils/schemaParsing';
-import { getTracingConfig } from '../../../../../utils/tracing';
+import { isChatInstance } from '@n8n/ai-utilities';
+import { getConnectedTools, getPromptInputByType } from '@utils/helpers';
+import { wrapLangChainParserError } from '@utils/output_parsers/langchainParserError';
+import { getOptionalOutputParser } from '@utils/output_parsers/N8nOutputParser';
+import { throwIfToolSchema } from '@utils/schemaParsing';
+import { buildTracingMetadata, getTracingConfig } from '@utils/tracing';
+
 import { checkForStructuredTools, extractParsedOutput } from '../utils';
 
 export async function reActAgentAgentExecute(
@@ -27,23 +24,30 @@ export async function reActAgentAgentExecute(
 ): Promise<INodeExecutionData[][]> {
 	this.logger.debug('Executing ReAct Agent');
 
-	const model = (await this.getInputConnectionData(NodeConnectionType.AiLanguageModel, 0)) as
+	const model = (await this.getInputConnectionData(NodeConnectionTypes.AiLanguageModel, 0)) as
 		| BaseLanguageModel
 		| BaseChatModel;
 
-	const tools = await getConnectedTools(this, nodeVersion >= 1.5);
+	const tools = await getConnectedTools(this, nodeVersion >= 1.5, true, true);
 
 	await checkForStructuredTools(tools, this.getNode(), 'ReAct Agent');
 
-	const outputParsers = await getOptionalOutputParsers(this);
+	const outputParser = await getOptionalOutputParser(this);
 
 	const options = this.getNodeParameter('options', 0, {}) as {
 		prefix?: string;
 		suffix?: string;
 		suffixChat?: string;
+		maxIterations?: number;
 		humanMessageTemplate?: string;
 		returnIntermediateSteps?: boolean;
+		tracingMetadata?: { values?: Array<{ key: string; value: unknown }> };
 	};
+	const additionalMetadata = buildTracingMetadata(options.tracingMetadata?.values, this.logger);
+	if (Object.keys(additionalMetadata).length > 0) {
+		this.logger.debug('Tracing metadata', { additionalMetadata });
+	}
+	const tracingConfig = getTracingConfig(this, { additionalMetadata });
 	let agent: ChatAgent | ZeroShotAgent;
 
 	if (isChatInstance(model)) {
@@ -63,16 +67,13 @@ export async function reActAgentAgentExecute(
 		agent,
 		tools,
 		returnIntermediateSteps: options?.returnIntermediateSteps === true,
+		maxIterations: options.maxIterations ?? 10,
 	});
 
 	const returnData: INodeExecutionData[] = [];
 
-	let outputParser: BaseOutputParser | undefined;
 	let prompt: PromptTemplate | undefined;
-	if (outputParsers.length) {
-		outputParser =
-			outputParsers.length === 1 ? outputParsers[0] : new CombiningOutputParser(...outputParsers);
-
+	if (outputParser) {
 		const formatInstructions = outputParser.getFormatInstructions();
 
 		prompt = new PromptTemplate({
@@ -107,8 +108,8 @@ export async function reActAgentAgentExecute(
 			}
 
 			const response = await agentExecutor
-				.withConfig(getTracingConfig(this))
-				.invoke({ input, outputParsers });
+				.withConfig(tracingConfig)
+				.invoke({ input, outputParser });
 
 			if (outputParser) {
 				response.output = await extractParsedOutput(this, outputParser, response.output as string);
@@ -117,12 +118,18 @@ export async function reActAgentAgentExecute(
 			returnData.push({ json: response });
 		} catch (error) {
 			throwIfToolSchema(this, error);
+			const executionError = wrapLangChainParserError(error, this.getNode(), itemIndex, {
+				enrichNonParserErrors: true,
+			});
 			if (this.continueOnFail()) {
-				returnData.push({ json: { error: error.message }, pairedItem: { item: itemIndex } });
+				returnData.push({
+					json: { error: executionError.message },
+					pairedItem: { item: itemIndex },
+				});
 				continue;
 			}
 
-			throw error;
+			throw executionError;
 		}
 	}
 

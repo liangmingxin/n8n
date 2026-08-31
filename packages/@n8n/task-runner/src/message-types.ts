@@ -2,7 +2,7 @@ import type { INodeTypeBaseDescription } from 'n8n-workflow';
 
 import type {
 	NeededNodeType,
-	RPC_ALLOW_LIST,
+	AVAILABLE_RPC_METHODS,
 	TaskDataRequestParams,
 	TaskResultData,
 } from './runner-types';
@@ -57,6 +57,11 @@ export namespace BrokerMessage {
 			nodeTypes: INodeTypeBaseDescription[];
 		}
 
+		/** Signals the runner to stop accepting tasks, complete active ones, and prepare for shutdown. */
+		export interface Drain {
+			type: 'broker:drain';
+		}
+
 		export type All =
 			| InfoRequest
 			| TaskOfferAccept
@@ -65,7 +70,8 @@ export namespace BrokerMessage {
 			| RunnerRegistered
 			| RPCResponse
 			| TaskDataResponse
-			| NodeTypes;
+			| NodeTypes
+			| Drain;
 	}
 
 	export namespace ToRequester {
@@ -87,6 +93,12 @@ export namespace BrokerMessage {
 			error: unknown;
 		}
 
+		export interface RequestExpired {
+			type: 'broker:requestexpired';
+			requestId: string;
+			reason: 'timeout' | 'draining';
+		}
+
 		export interface TaskDataRequest {
 			type: 'broker:taskdatarequest';
 			taskId: string;
@@ -105,11 +117,18 @@ export namespace BrokerMessage {
 			type: 'broker:rpc';
 			callId: string;
 			taskId: string;
-			name: (typeof RPC_ALLOW_LIST)[number];
+			name: (typeof AVAILABLE_RPC_METHODS)[number];
 			params: unknown[];
 		}
 
-		export type All = TaskReady | TaskDone | TaskError | TaskDataRequest | NodeTypesRequest | RPC;
+		export type All =
+			| TaskReady
+			| TaskDone
+			| TaskError
+			| RequestExpired
+			| TaskDataRequest
+			| NodeTypesRequest
+			| RPC;
 	}
 }
 
@@ -184,6 +203,12 @@ export namespace RunnerMessage {
 			reason: string;
 		}
 
+		/** Message where launcher (impersonating runner) requests broker to hold task until runner is ready. */
+		export interface TaskDeferred {
+			type: 'runner:taskdeferred';
+			taskId: string;
+		}
+
 		export interface TaskDone {
 			type: 'runner:taskdone';
 			taskId: string;
@@ -233,7 +258,7 @@ export namespace RunnerMessage {
 			type: 'runner:rpc';
 			callId: string;
 			taskId: string;
-			name: (typeof RPC_ALLOW_LIST)[number];
+			name: (typeof AVAILABLE_RPC_METHODS)[number];
 			params: unknown[];
 		}
 
@@ -243,6 +268,7 @@ export namespace RunnerMessage {
 			| TaskError
 			| TaskAccepted
 			| TaskRejected
+			| TaskDeferred
 			| TaskOffer
 			| RPC
 			| TaskDataRequest

@@ -1,3 +1,4 @@
+import moment from 'moment-timezone';
 import type {
 	IExecuteFunctions,
 	IDataObject,
@@ -9,12 +10,12 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 
-import moment from 'moment-timezone';
+import { versionDescription } from './VersionDescription';
 import type { SortData } from '../shared/GenericFunctions';
 import {
-	extractDatabaseId,
 	extractDatabaseMentionRLC,
 	extractPageId,
+	extractResourceId,
 	formatBlocks,
 	formatTitle,
 	getBlockTypesOptions,
@@ -25,9 +26,7 @@ import {
 	notionApiRequestAllItems,
 	simplifyObjects,
 } from '../shared/GenericFunctions';
-
 import { listSearch } from '../shared/methods';
-import { versionDescription } from './VersionDescription';
 
 export class NotionV1 implements INodeType {
 	description: INodeTypeDescription;
@@ -296,7 +295,7 @@ export class NotionV1 implements INodeType {
 		if (resource === 'database') {
 			if (operation === 'get') {
 				for (let i = 0; i < length; i++) {
-					const databaseId = extractDatabaseId(
+					const databaseId = extractResourceId(
 						this.getNodeParameter('databaseId', i, '', { extractValue: true }) as string,
 					);
 					responseData = await notionApiRequest.call(this, 'GET', `/databases/${databaseId}`);

@@ -8,6 +8,7 @@ import type {
 	IN8nHttpFullResponse,
 	INodeExecutionData,
 } from 'n8n-workflow';
+
 import {
 	getCursorPaginator,
 	getUsers,
@@ -15,10 +16,11 @@ import {
 	simplifyGetAllResponse,
 	simplifyGetResponse,
 } from '../UserFunctions';
+import type { Mock } from 'vitest';
 
 describe('oktaApiRequest', () => {
-	const mockGetCredentials = jest.fn();
-	const mockHttpRequestWithAuthentication = jest.fn();
+	const mockGetCredentials = vi.fn();
+	const mockHttpRequestWithAuthentication = vi.fn();
 
 	const mockContext = {
 		getCredentials: mockGetCredentials,
@@ -61,9 +63,9 @@ describe('oktaApiRequest', () => {
 });
 
 describe('getUsers', () => {
-	const mockOktaApiRequest = jest.fn();
+	const mockOktaApiRequest = vi.fn();
 	const mockContext = {
-		getCredentials: jest.fn().mockResolvedValue({ url: 'https://okta.example.com' }),
+		getCredentials: vi.fn().mockResolvedValue({ url: 'https://okta.example.com' }),
 		helpers: {
 			httpRequestWithAuthentication: mockOktaApiRequest,
 		},
@@ -115,11 +117,11 @@ describe('getUsers', () => {
 });
 
 describe('simplifyGetAllResponse', () => {
-	const mockGetNodeParameter = jest.fn();
+	const mockGetNodeParameter = vi.fn();
 	const mockContext = {
 		getNodeParameter: mockGetNodeParameter,
 	} as unknown as IExecuteSingleFunctions;
-	const mockResponse = jest.fn() as unknown as IN8nHttpFullResponse;
+	const mockResponse = vi.fn() as unknown as IN8nHttpFullResponse;
 
 	const items: INodeExecutionData[] = [
 		{
@@ -216,11 +218,11 @@ describe('simplifyGetAllResponse', () => {
 });
 
 describe('simplifyGetResponse', () => {
-	const mockGetNodeParameter = jest.fn();
+	const mockGetNodeParameter = vi.fn();
 	const mockContext = {
 		getNodeParameter: mockGetNodeParameter,
 	} as unknown as IExecuteSingleFunctions;
-	const mockResponse = jest.fn() as unknown as IN8nHttpFullResponse;
+	const mockResponse = vi.fn() as unknown as IN8nHttpFullResponse;
 
 	const items: INodeExecutionData[] = [
 		{
@@ -310,8 +312,8 @@ describe('getCursorPaginator', () => {
 
 	beforeEach(() => {
 		mockContext = {
-			getNodeParameter: jest.fn(),
-			makeRoutingRequest: jest.fn(),
+			getNodeParameter: vi.fn(),
+			makeRoutingRequest: vi.fn(),
 		} as unknown as IExecutePaginationFunctions;
 
 		mockRequestOptions = {
@@ -328,8 +330,8 @@ describe('getCursorPaginator', () => {
 			{ json: { id: 3 }, headers: { link: `<${baseUrl}>` } },
 		];
 
-		(mockContext.getNodeParameter as jest.Mock).mockReturnValue(true);
-		(mockContext.makeRoutingRequest as jest.Mock)
+		(mockContext.getNodeParameter as Mock).mockReturnValue(true);
+		(mockContext.makeRoutingRequest as Mock)
 			.mockResolvedValueOnce([mockResponseData[0]])
 			.mockResolvedValueOnce([mockResponseData[1]])
 			.mockResolvedValueOnce([mockResponseData[2]]);
@@ -348,8 +350,8 @@ describe('getCursorPaginator', () => {
 			{ json: { id: 2 }, headers: { link: `<${baseUrl}>` } },
 		];
 
-		(mockContext.getNodeParameter as jest.Mock).mockReturnValue(true);
-		(mockContext.makeRoutingRequest as jest.Mock)
+		(mockContext.getNodeParameter as Mock).mockReturnValue(true);
+		(mockContext.makeRoutingRequest as Mock)
 			.mockResolvedValueOnce([mockResponseData[0]])
 			.mockResolvedValueOnce([mockResponseData[1]]);
 
@@ -362,8 +364,8 @@ describe('getCursorPaginator', () => {
 	});
 
 	it('should handle empty response data', async () => {
-		(mockContext.getNodeParameter as jest.Mock).mockReturnValue(true);
-		(mockContext.makeRoutingRequest as jest.Mock).mockResolvedValue([]);
+		(mockContext.getNodeParameter as Mock).mockReturnValue(true);
+		(mockContext.makeRoutingRequest as Mock).mockResolvedValue([]);
 
 		const paginator = getCursorPaginator().bind(mockContext);
 		const result = await paginator(mockRequestOptions);

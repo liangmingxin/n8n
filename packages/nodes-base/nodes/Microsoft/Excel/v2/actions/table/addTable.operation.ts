@@ -4,9 +4,12 @@ import type {
 	INodeExecutionData,
 	INodeProperties,
 } from 'n8n-workflow';
+
+import { updateDisplayOptions } from '@utils/utilities';
+
+import { stampItemIndexOnError } from '../../../../GenericFunctions';
 import { microsoftApiRequest } from '../../transport';
 import { workbookRLC, worksheetRLC } from '../common.descriptions';
-import { updateDisplayOptions } from '@utils/utilities';
 
 const properties: INodeProperties[] = [
 	workbookRLC,
@@ -92,6 +95,9 @@ export async function execute(
 					{
 						select: 'address',
 					},
+					undefined,
+					undefined,
+					i,
 				);
 				range = address.split('!')[1];
 			} else {
@@ -106,6 +112,10 @@ export async function execute(
 					address: range,
 					hasHeaders,
 				},
+				undefined,
+				undefined,
+				undefined,
+				i,
 			);
 
 			const executionData = this.helpers.constructExecutionMetaData(
@@ -123,7 +133,8 @@ export async function execute(
 				returnData.push(...executionErrorData);
 				continue;
 			}
-			throw error;
+			// A NodeError from the transport may be missing the itemIndex, add it
+			throw stampItemIndexOnError(error, i);
 		}
 	}
 

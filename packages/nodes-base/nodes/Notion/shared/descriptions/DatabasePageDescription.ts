@@ -1,9 +1,6 @@
 import type { INodeProperties } from 'n8n-workflow';
 
-import { getConditions, getSearchFilters } from '../GenericFunctions';
-
 import { blocks, text } from './Blocks';
-
 import { filters } from './Filters';
 import {
 	databaseUrlExtractionRegexp,
@@ -13,6 +10,7 @@ import {
 	idExtractionRegexp,
 	idValidationRegexp,
 } from '../constants';
+import { getConditions, getSearchFilters } from '../GenericFunctions';
 
 export const databasePageOperations: INodeProperties[] = [
 	{
@@ -32,7 +30,7 @@ export const databasePageOperations: INodeProperties[] = [
 			{
 				name: 'Create',
 				value: 'create',
-				description: 'Create a pages in a database',
+				description: 'Create a page in a database',
 				action: 'Create a database page',
 			},
 			{
@@ -117,7 +115,7 @@ export const databasePageFields: INodeProperties[] = [
 				name: 'url',
 				type: 'string',
 				placeholder:
-					'https://www.notion.so/0fe2f7de558b471eab07e9d871cdf4a9?v=f2d424ba0c404733a3f500c78c881610',
+					'https://www.notion.com/0fe2f7de558b471eab07e9d871cdf4a9?v=f2d424ba0c404733a3f500c78c881610',
 				validation: [
 					{
 						type: 'regex',
@@ -150,7 +148,7 @@ export const databasePageFields: INodeProperties[] = [
 					type: 'regex',
 					regex: idExtractionRegexp,
 				},
-				url: '=https://www.notion.so/{{$value.replace(/-/g, "")}}',
+				url: '=https://www.notion.com/{{$value.replace(/-/g, "")}}',
 			},
 		],
 		displayOptions: {
@@ -600,7 +598,7 @@ export const databasePageFields: INodeProperties[] = [
 				displayName: 'Link',
 				name: 'url',
 				type: 'string',
-				placeholder: 'https://www.notion.so/My-Database-Page-b4eeb113e118403ba450af65ac25f0b9',
+				placeholder: 'https://www.notion.com/My-Database-Page-b4eeb113e118403ba450af65ac25f0b9',
 				validation: [
 					{
 						type: 'regex',
@@ -633,7 +631,7 @@ export const databasePageFields: INodeProperties[] = [
 					type: 'regex',
 					regex: idExtractionRegexp,
 				},
-				url: '=https://www.notion.so/{{$value.replace(/-/g, "")}}',
+				url: '=https://www.notion.com/{{$value.replace(/-/g, "")}}',
 			},
 		],
 		displayOptions: {
@@ -1066,7 +1064,7 @@ export const databasePageFields: INodeProperties[] = [
 				displayName: 'Link',
 				name: 'url',
 				type: 'string',
-				placeholder: 'https://www.notion.so/My-Database-Page-b4eeb113e118403ba450af65ac25f0b9',
+				placeholder: 'https://www.notion.com/My-Database-Page-b4eeb113e118403ba450af65ac25f0b9',
 				validation: [
 					{
 						type: 'regex',
@@ -1099,7 +1097,7 @@ export const databasePageFields: INodeProperties[] = [
 					type: 'regex',
 					regex: idExtractionRegexp,
 				},
-				url: '=https://www.notion.so/{{$value.replace(/-/g, "")}}',
+				url: '=https://www.notion.com/{{$value.replace(/-/g, "")}}',
 			},
 		],
 		displayOptions: {
@@ -1154,7 +1152,7 @@ export const databasePageFields: INodeProperties[] = [
 				name: 'url',
 				type: 'string',
 				placeholder:
-					'https://www.notion.so/0fe2f7de558b471eab07e9d871cdf4a9?v=f2d424ba0c404733a3f500c78c881610',
+					'https://www.notion.com/0fe2f7de558b471eab07e9d871cdf4a9?v=f2d424ba0c404733a3f500c78c881610',
 				validation: [
 					{
 						type: 'regex',
@@ -1187,7 +1185,7 @@ export const databasePageFields: INodeProperties[] = [
 					type: 'regex',
 					regex: idExtractionRegexp,
 				},
-				url: '=https://www.notion.so/{{$value.replace(/-/g, "")}}',
+				url: '=https://www.notion.com/{{$value.replace(/-/g, "")}}',
 			},
 		],
 		displayOptions: {
@@ -1224,7 +1222,6 @@ export const databasePageFields: INodeProperties[] = [
 		},
 		typeOptions: {
 			minValue: 1,
-			maxValue: 100,
 		},
 		default: 50,
 		description: 'Max number of results to return',

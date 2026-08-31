@@ -1,3 +1,4 @@
+import set from 'lodash/set';
 import type {
 	IDataObject,
 	IExecuteFunctions,
@@ -8,7 +9,8 @@ import type {
 	JsonObject,
 } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
-import set from 'lodash/set';
+
+import type { GoogleServiceAccount } from '../../../GenericFunctions';
 import { getGoogleAccessToken } from '../../../GenericFunctions';
 
 export async function apiRequest(
@@ -20,6 +22,7 @@ export async function apiRequest(
 	uri?: string,
 	headers: IDataObject = {},
 	option: IDataObject = {},
+	service: GoogleServiceAccount = 'sheetV2',
 ) {
 	const authenticationMethod = this.getNodeParameter(
 		'authentication',
@@ -48,7 +51,7 @@ export async function apiRequest(
 		if (authenticationMethod === 'serviceAccount') {
 			const credentials = await this.getCredentials('googleApi');
 
-			const { access_token } = await getGoogleAccessToken.call(this, credentials, 'sheetV2');
+			const { access_token } = await getGoogleAccessToken.call(this, credentials, service);
 
 			options.headers!.Authorization = `Bearer ${access_token}`;
 

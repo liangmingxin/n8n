@@ -1,3 +1,4 @@
+import { snakeCase } from 'change-case';
 import type {
 	JsonObject,
 	IDataObject,
@@ -9,8 +10,6 @@ import type {
 	IRequestOptions,
 } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
-
-import { snakeCase } from 'change-case';
 
 export async function pagerDutyApiRequest(
 	this: IExecuteFunctions | IWebhookFunctions | IHookFunctions | ILoadOptionsFunctions,
@@ -74,12 +73,15 @@ export async function pagerDutyApiRequestAllItems(
 	const returnData: IDataObject[] = [];
 
 	let responseData;
-	query.limit = 100;
+	// PagerDuty's `offset` is the index of the first record to return, not a page
+	// number, so it has to advance by the page size to reach the next page.
+	const limit = 100;
+	query.limit = limit;
 	query.offset = 0;
 
 	do {
 		responseData = await pagerDutyApiRequest.call(this, method, endpoint, body, query);
-		query.offset++;
+		query.offset = (query.offset as number) + limit;
 		returnData.push.apply(returnData, responseData[propertyName] as IDataObject[]);
 	} while (responseData.more);
 

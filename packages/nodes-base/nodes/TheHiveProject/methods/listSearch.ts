@@ -1,4 +1,5 @@
 import type { IDataObject, ILoadOptionsFunctions, INodeListSearchResult } from 'n8n-workflow';
+
 import { theHiveApiRequest } from '../transport';
 
 async function listResource(
@@ -53,7 +54,7 @@ async function listResource(
 			url:
 				urlPlaceholder !== undefined ? `${url}/${urlPlaceholder}/${entry._id}/details` : undefined,
 		})),
-		paginationToken: to,
+		paginationToken: String(to),
 	};
 }
 
@@ -186,7 +187,7 @@ export async function pageSearch(
 			name: entry.title,
 			value: entry._id,
 		})),
-		paginationToken: to,
+		paginationToken: String(to),
 	};
 }
 
@@ -265,6 +266,6 @@ export async function observableSearch(
 			name: entry.data || (entry.attachment as IDataObject)?.name || entry.message || entry._id,
 			value: entry._id,
 		})),
-		paginationToken: to,
+		paginationToken: String(to),
 	};
 }

@@ -5,8 +5,15 @@ import {
 	NodeOperationError,
 	type ResourceMapperField,
 } from 'n8n-workflow';
-import type { SheetProperties, ValueInputOption } from '../../helpers/GoogleSheets.types';
+
+import {
+	cellFormat,
+	columnsResourceMapperBuilderHint,
+	handlingExtraData,
+	useAppendOption,
+} from './commonDescription';
 import type { GoogleSheet } from '../../helpers/GoogleSheet';
+import type { SheetProperties, ValueInputOption } from '../../helpers/GoogleSheets.types';
 import {
 	autoMapInputData,
 	cellFormatDefault,
@@ -14,7 +21,6 @@ import {
 	mapFields,
 	untilSheetSelected,
 } from '../../helpers/GoogleSheets.utils';
-import { cellFormat, handlingExtraData, useAppendOption } from './commonDescription';
 
 export const description: SheetProperties = [
 	{
@@ -126,6 +132,7 @@ export const description: SheetProperties = [
 			value: null,
 		},
 		required: true,
+		builderHint: columnsResourceMapperBuilderHint,
 		typeOptions: {
 			loadOptionsDependsOn: ['sheetName.value'],
 			resourceMapper: {
@@ -232,25 +239,54 @@ export async function execute(
 		dataMode = 'autoMapInputData';
 	}
 
+	// Extract the header row once to avoid duplicate API calls later
+	const headerRow = sheetData?.[keyRowIndex - 1];
+
 	if (nodeVersion >= 4.4 && dataMode !== 'autoMapInputData') {
 		//not possible to refresh columns when mode is autoMapInputData
-		if (sheetData?.[keyRowIndex - 1] === undefined) {
+		if (headerRow === undefined) {
 			throw new NodeOperationError(
 				this.getNode(),
 				`Could not retrieve the column names from row ${keyRowIndex}`,
 			);
 		}
 
-		const schema = this.getNodeParameter('columns.schema', 0) as ResourceMapperField[];
-		checkForSchemaChanges(this.getNode(), sheetData[keyRowIndex - 1], schema);
+		// Use a fallback so the missing schema gets an operation-specific error.
+		const schema = this.getNodeParameter(
+			'columns.schema',
+			0,
+			[] as ResourceMapperField[],
+		) as ResourceMapperField[];
+		if (!Array.isArray(schema) || schema.length === 0) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'`columns.schema` is required when `columns.mappingMode` is `defineBelow`',
+				{
+					description:
+						'Provide a `columns.schema` array describing each sheet column (`{ id, displayName, required, defaultMatch, display, type, canBeUsedToMatch }` per entry) alongside `columns.value`. Switch to `mappingMode: "autoMapInputData"` and `value: {}` if you want n8n to map input fields to columns by name instead.',
+				},
+			);
+		}
+		checkForSchemaChanges(this.getNode(), headerRow, schema);
 	}
 
 	let inputData: IDataObject[] = [];
 
 	if (dataMode === 'autoMapInputData') {
-		inputData = await autoMapInputData.call(this, range, sheet, items, options);
+		// Pass pre-fetched column names to skip a duplicate API call inside autoMapInputData.
+		// Only pass when truthy so that callers without a pre-fetch behave identically.
+		if (headerRow) {
+			inputData = await autoMapInputData.call(this, range, sheet, items, options, headerRow);
+		} else {
+			inputData = await autoMapInputData.call(this, range, sheet, items, options);
+		}
 	} else {
 		inputData = mapFields.call(this, items.length);
+		// For non-autoMap modes autoMapInputData won't set the hint, so set it here
+		// so that convertObjectArrayToSheetDataArray can skip its own API call.
+		if (headerRow) {
+			sheet.setColumnNamesHint(headerRow);
+		}
 	}
 
 	if (inputData.length === 0) {

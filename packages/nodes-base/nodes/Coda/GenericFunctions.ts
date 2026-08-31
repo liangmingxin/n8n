@@ -23,7 +23,6 @@ export async function codaApiRequest(
 	let options: IRequestOptions = {
 		headers: {
 			Authorization: `Bearer ${credentials.accessToken}`,
-			'User-Agent': 'n8n',
 		},
 		method,
 		qs,
@@ -67,7 +66,6 @@ export async function codaApiRequestAllItems(
 	do {
 		responseData = await codaApiRequest.call(this, method, resource, body, query, uri);
 		uri = responseData.nextPageLink;
-		// @ts-ignore
 		returnData.push.apply(returnData, responseData[propertyName] as IDataObject[]);
 	} while (responseData.nextPageLink !== undefined && responseData.nextPageLink !== '');
 

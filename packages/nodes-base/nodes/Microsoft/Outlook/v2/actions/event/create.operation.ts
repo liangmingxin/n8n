@@ -1,10 +1,13 @@
-import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
 import { DateTime } from 'luxon';
 import moment from 'moment-timezone';
-import { microsoftApiRequest } from '../../transport';
-import { calendarRLC } from '../../descriptions';
+import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
+
 import { updateDisplayOptions } from '@utils/utilities';
+
+import { calendarRLC, eventAttendeesField, eventLocationField } from '../../descriptions';
+import { prepareEventFields } from '../../helpers/utils';
+import { microsoftApiRequest } from '../../transport';
 
 export const properties: INodeProperties[] = [
 	calendarRLC,
@@ -36,6 +39,7 @@ export const properties: INodeProperties[] = [
 		placeholder: 'Add Field',
 		default: {},
 		options: [
+			eventAttendeesField,
 			{
 				// eslint-disable-next-line n8n-nodes-base/node-param-display-name-wrong-for-dynamic-multi-options
 				displayName: 'Categories',
@@ -115,6 +119,7 @@ export const properties: INodeProperties[] = [
 				type: 'boolean',
 				default: false,
 			},
+			eventLocationField,
 			{
 				displayName: 'Sensitivity',
 				name: 'sensitivity',
@@ -249,6 +254,8 @@ export async function execute(this: IExecuteFunctions, index: number) {
 		};
 	}
 
+	additionalFields = prepareEventFields(additionalFields);
+
 	let startDateTime = this.getNodeParameter('startDateTime', index) as string;
 	let endDateTime = this.getNodeParameter('endDateTime', index) as string;
 
@@ -279,7 +286,7 @@ export async function execute(this: IExecuteFunctions, index: number) {
 		...additionalFields,
 	};
 
-	const responseData = await microsoftApiRequest.call(this, 'POST', endpoint, body);
+	const responseData = await microsoftApiRequest.call(this, 'POST', endpoint, index, body);
 
 	const executionData = this.helpers.constructExecutionMetaData(
 		this.helpers.returnJsonArray(responseData as IDataObject),

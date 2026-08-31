@@ -9,36 +9,33 @@ import type {
 	INodeTypeDescription,
 	JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError, NodeConnectionType } from 'n8n-workflow';
+import { NodeApiError, NodeConnectionTypes } from 'n8n-workflow';
 
-import { generatePairedItemData } from '../../../../utils/utilities';
+import { oldVersionNotice } from '@utils/descriptions';
+
 import {
 	microsoftApiRequest,
 	microsoftApiRequestAllItems,
 	microsoftApiRequestAllItemsSkip,
 } from './GenericFunctions';
-
-import { workbookFields, workbookOperations } from './WorkbookDescription';
-
-import { worksheetFields, worksheetOperations } from './WorksheetDescription';
-
 import { tableFields, tableOperations } from './TableDescription';
-
-import { oldVersionNotice } from '@utils/descriptions';
+import { workbookFields, workbookOperations } from './WorkbookDescription';
+import { worksheetFields, worksheetOperations } from './WorksheetDescription';
+import { generatePairedItemData } from '../../../../utils/utilities';
 
 const versionDescription: INodeTypeDescription = {
-	displayName: 'Microsoft Excel',
+	displayName: 'Microsoft Excel (OneDrive)',
 	name: 'microsoftExcel',
 	icon: 'file:excel.svg',
 	group: ['input'],
 	version: 1,
 	subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-	description: 'Consume Microsoft Excel API',
+	description: 'Consume the Microsoft Excel API for workbooks stored in OneDrive',
 	defaults: {
-		name: 'Microsoft Excel',
+		name: 'Microsoft Excel (OneDrive)',
 	},
-	inputs: [NodeConnectionType.Main],
-	outputs: [NodeConnectionType.Main],
+	inputs: [NodeConnectionTypes.Main],
+	outputs: [NodeConnectionTypes.Main],
 	credentials: [
 		{
 			name: 'microsoftExcelOAuth2Api',

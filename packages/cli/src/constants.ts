@@ -1,33 +1,53 @@
-import { readFileSync } from 'fs';
+import { Time } from '@n8n/constants';
+import { readFileSync, statSync } from 'fs';
 import type { n8n } from 'n8n-core';
-import { jsonParse } from 'n8n-workflow';
+import type { ITaskDataConnections } from 'n8n-workflow';
+import {
+	ERROR_TRIGGER_NODE_TYPE,
+	EXECUTE_WORKFLOW_TRIGGER_NODE_TYPE,
+	jsonParse,
+	TRIMMED_TASK_DATA_CONNECTIONS_KEY,
+} from 'n8n-workflow';
 import { resolve, join, dirname } from 'path';
 
-const { NODE_ENV, E2E_TESTS } = process.env;
-export const inProduction = NODE_ENV === 'production';
-export const inDevelopment = !NODE_ENV || NODE_ENV === 'development';
-export const inTest = NODE_ENV === 'test';
+const { E2E_TESTS } = process.env;
 export const inE2ETests = E2E_TESTS === 'true';
 
 export const CUSTOM_API_CALL_NAME = 'Custom API Call';
 export const CUSTOM_API_CALL_KEY = '__CUSTOM_API_CALL__';
 
 export const CLI_DIR = resolve(__dirname, '..');
+export const AI_ASSISTANT_SDK_DIR = dirname(dirname(require.resolve('@n8n_io/ai-assistant-sdk')));
 export const TEMPLATES_DIR = join(CLI_DIR, 'templates');
 export const NODES_BASE_DIR = dirname(require.resolve('n8n-nodes-base'));
 export const EDITOR_UI_DIST_DIR = join(dirname(require.resolve('n8n-editor-ui')), 'dist');
 
-export function getN8nPackageJson() {
-	return jsonParse<n8n.PackageJson>(readFileSync(join(CLI_DIR, 'package.json'), 'utf8'));
-}
+const packageJsonPath = join(CLI_DIR, 'package.json');
+const aiAssistantPackageJsonPath = join(AI_ASSISTANT_SDK_DIR, 'package.json');
+const workflowSdkPackageJsonPath = require.resolve('@n8n/workflow-sdk/package.json');
+const n8nPackageJson = jsonParse<n8n.PackageJson>(readFileSync(packageJsonPath, 'utf8'));
+const aiAssistantPackageJson = jsonParse<n8n.PackageJson>(
+	readFileSync(aiAssistantPackageJsonPath, 'utf8'),
+);
+const workflowSdkPackageJson = jsonParse<n8n.PackageJson>(
+	readFileSync(workflowSdkPackageJsonPath, 'utf8'),
+);
+export const N8N_VERSION = n8nPackageJson.version;
+export const AI_ASSISTANT_SDK_VERSION = aiAssistantPackageJson.version;
+export const WORKFLOW_SDK_VERSION = workflowSdkPackageJson.version;
+export const N8N_RELEASE_DATE = statSync(packageJsonPath).mtime;
 
 export const STARTING_NODES = [
 	'@n8n/n8n-nodes-langchain.manualChatTrigger',
-	'n8n-nodes-base.start',
 	'n8n-nodes-base.manualTrigger',
 ];
 
-export const N8N_VERSION = getN8nPackageJson().version;
+export const TRIGGER_COUNT_EXCLUDED_NODES = [
+	EXECUTE_WORKFLOW_TRIGGER_NODE_TYPE,
+	ERROR_TRIGGER_NODE_TYPE,
+];
+
+export const MCP_TRIGGER_NODE_TYPE = '@n8n/n8n-nodes-langchain.mcpTrigger';
 
 export const NODE_PACKAGE_PREFIX = 'n8n-nodes-';
 
@@ -52,6 +72,20 @@ export const RESPONSE_ERROR_MESSAGES = {
 } as const;
 
 export const AUTH_COOKIE_NAME = 'n8n-auth';
+export const OIDC_STATE_COOKIE_NAME = 'n8n-oidc-state';
+export const OIDC_NONCE_COOKIE_NAME = 'n8n-oidc-nonce';
+
+/**
+ * Cookies the Form nodes set on their own pages, duplicated here because the
+ * names are owned by `nodes-base/nodes/Form/utils/utils.ts`
+ * (`FORM_AUTH_COOKIE_PREFIX` / `FORM_OAUTH_COOKIE_NAME`) and this package must
+ * not reach into that package's internals. Keep both sides in step. The form
+ * auth cookie's full name appends the workflow or execution it was minted for
+ * (`<prefix>-wf-<id>` / `<prefix>-ex-<id>`), so concurrent forms don't
+ * overwrite each other's cookie.
+ */
+export const FORM_AUTH_COOKIE_PREFIX = 'n8n-form-auth';
+export const FORM_OAUTH_COOKIE_NAME = 'n8n-form-oauth';
 
 export const NPM_COMMAND_TOKENS = {
 	NPM_PACKAGE_NOT_FOUND_ERROR: '404 Not Found',
@@ -59,7 +93,7 @@ export const NPM_COMMAND_TOKENS = {
 	NPM_NO_VERSION_AVAILABLE: 'No valid versions available',
 	NPM_DISK_NO_SPACE: 'ENOSPC',
 	NPM_DISK_INSUFFICIENT_SPACE: 'insufficient space',
-};
+} as const;
 
 export const NPM_PACKAGE_STATUS_GOOD = 'OK';
 
@@ -68,97 +102,63 @@ export const UNKNOWN_FAILURE_REASON = 'Unknown failure reason';
 export const WORKFLOW_REACTIVATE_INITIAL_TIMEOUT = 1000; // 1 second
 export const WORKFLOW_REACTIVATE_MAX_TIMEOUT = 24 * 60 * 60 * 1000; // 1 day
 
+/** Max in-process attempts to activate a single trigger node before recording it as failed. */
+export const TRIGGER_ACTIVATION_MAX_ATTEMPTS = 5;
+
+/** Max in-process attempts to externally deregister a single webhook before abandoning it. */
+export const TRIGGER_TEARDOWN_MAX_ATTEMPTS = 3;
+
+/** Base delay between external webhook deregistration attempts; doubles per attempt. */
+export const TRIGGER_TEARDOWN_RETRY_INITIAL_DELAY_MS = 1000;
+
 export const SETTINGS_LICENSE_CERT_KEY = 'license.cert';
-
-export const LICENSE_FEATURES = {
-	SHARING: 'feat:sharing',
-	LDAP: 'feat:ldap',
-	SAML: 'feat:saml',
-	LOG_STREAMING: 'feat:logStreaming',
-	ADVANCED_EXECUTION_FILTERS: 'feat:advancedExecutionFilters',
-	VARIABLES: 'feat:variables',
-	SOURCE_CONTROL: 'feat:sourceControl',
-	API_DISABLED: 'feat:apiDisabled',
-	EXTERNAL_SECRETS: 'feat:externalSecrets',
-	SHOW_NON_PROD_BANNER: 'feat:showNonProdBanner',
-	WORKFLOW_HISTORY: 'feat:workflowHistory',
-	DEBUG_IN_EDITOR: 'feat:debugInEditor',
-	BINARY_DATA_S3: 'feat:binaryDataS3',
-	MULTIPLE_MAIN_INSTANCES: 'feat:multipleMainInstances',
-	WORKER_VIEW: 'feat:workerView',
-	ADVANCED_PERMISSIONS: 'feat:advancedPermissions',
-	PROJECT_ROLE_ADMIN: 'feat:projectRole:admin',
-	PROJECT_ROLE_EDITOR: 'feat:projectRole:editor',
-	PROJECT_ROLE_VIEWER: 'feat:projectRole:viewer',
-	AI_ASSISTANT: 'feat:aiAssistant',
-	ASK_AI: 'feat:askAi',
-	COMMUNITY_NODES_CUSTOM_REGISTRY: 'feat:communityNodes:customRegistry',
-} as const;
-
-export const LICENSE_QUOTAS = {
-	TRIGGER_LIMIT: 'quota:activeWorkflows',
-	VARIABLES_LIMIT: 'quota:maxVariables',
-	USERS_LIMIT: 'quota:users',
-	WORKFLOW_HISTORY_PRUNE_LIMIT: 'quota:workflowHistoryPrune',
-	TEAM_PROJECT_LIMIT: 'quota:maxTeamProjects',
-} as const;
-export const UNLIMITED_LICENSE_QUOTA = -1;
-
-export const CREDENTIAL_BLANKING_VALUE = '__n8n_BLANK_VALUE_e5362baf-c777-4d57-a609-6eaf1f9e87f6';
 
 export const UM_FIX_INSTRUCTION =
 	'Please fix the database by running ./packages/cli/bin/n8n user-management:reset';
 
-/**
- * Units of time in milliseconds
- * @deprecated Please use constants.Time instead.
- */
-export const TIME = {
-	SECOND: 1000,
-	MINUTE: 60 * 1000,
-	HOUR: 60 * 60 * 1000,
-	DAY: 24 * 60 * 60 * 1000,
-} as const;
+export const TEST_WEBHOOK_TIMEOUT = 2 * Time.minutes.toMilliseconds;
 
-/**
- * Convert time from any unit to any other unit
- *
- * Please amend conversions as necessary.
- * Eventually this will superseed `TIME` above
- */
-export const Time = {
-	milliseconds: {
-		toMinutes: 1 / (60 * 1000),
-	},
-	seconds: {
-		toMilliseconds: 1000,
-	},
-	minutes: {
-		toMilliseconds: 60 * 1000,
-	},
-	hours: {
-		toMilliseconds: 60 * 60 * 1000,
-		toSeconds: 60 * 60,
-	},
-	days: {
-		toSeconds: 24 * 60 * 60,
-		toMilliseconds: 24 * 60 * 60 * 1000,
-	},
-};
-
-export const MIN_PASSWORD_CHAR_LENGTH = 8;
-
-export const MAX_PASSWORD_CHAR_LENGTH = 64;
-
-export const TEST_WEBHOOK_TIMEOUT = 2 * TIME.MINUTE;
-
-export const TEST_WEBHOOK_TIMEOUT_BUFFER = 30 * TIME.SECOND;
+export const TEST_WEBHOOK_TIMEOUT_BUFFER = 30 * Time.seconds.toMilliseconds;
 
 export const GENERIC_OAUTH2_CREDENTIALS_WITH_EDITABLE_SCOPE = [
 	'oAuth2Api',
 	'googleOAuth2Api',
 	'microsoftOAuth2Api',
+	'atlassianOAuth2Api',
 	'highLevelOAuth2Api',
+	'mcpOAuth2Api',
+	'snowflakeOAuth2Api',
+	'facebookGraphApiOAuth2Api',
+	'facebookGraphAppOAuth2Api',
+	'stravaOAuth2Api',
+	'wordpressOAuth2Api',
+	'figmaOAuth2Api',
+	'gumroadOAuth2Api',
+	'googleCloudStorageOAuth2Api',
+	'googleCalendarOAuth2Api',
+	'googleSheetsOAuth2Api',
+	'googleBigQueryOAuth2Api',
+	'zendeskOAuth2Api',
+	'gmailOAuth2',
+	'gSuiteAdminOAuth2Api',
+	'googleAdsOAuth2Api',
+	'googleAnalyticsOAuth2',
+	'googleBooksOAuth2Api',
+	'googleBusinessProfileOAuth2Api',
+	'googleChatOAuth2Api',
+	'googleCloudNaturalLanguageOAuth2Api',
+	'googleContactsOAuth2Api',
+	'googleDocsOAuth2Api',
+	'googleDriveOAuth2Api',
+	'googleFirebaseCloudFirestoreOAuth2Api',
+	'googleFirebaseRealtimeDatabaseOAuth2Api',
+	'googlePerspectiveOAuth2Api',
+	'googleSheetsTriggerOAuth2Api',
+	'googleSlidesOAuth2Api',
+	'googleTasksOAuth2Api',
+	'googleTranslateOAuth2Api',
+	'youTubeOAuth2Api',
+	'typeformOAuth2Api',
 ];
 
 export const ARTIFICIAL_TASK_DATA = {
@@ -172,8 +172,37 @@ export const ARTIFICIAL_TASK_DATA = {
 	],
 };
 
+/**
+ * Connections for an item standing in for a manual execution data item too
+ * large to be sent live via pubsub. This signals to the client to direct the
+ * user to the execution history.
+ */
+export const TRIMMED_TASK_DATA_CONNECTIONS: ITaskDataConnections = {
+	main: [
+		[
+			{
+				json: { [TRIMMED_TASK_DATA_CONNECTIONS_KEY]: true },
+				pairedItem: undefined,
+			},
+		],
+	],
+};
+
 /** Lowest priority, meaning shut down happens after other groups */
 export const LOWEST_SHUTDOWN_PRIORITY = 0;
 export const DEFAULT_SHUTDOWN_PRIORITY = 100;
 /** Highest priority, meaning shut down happens before all other groups */
 export const HIGHEST_SHUTDOWN_PRIORITY = 200;
+
+export const WsStatusCodes = {
+	CloseNormal: 1000,
+	CloseGoingAway: 1001,
+	CloseProtocolError: 1002,
+	CloseUnsupportedData: 1003,
+	CloseAbnormal: 1006,
+	CloseInvalidData: 1007,
+} as const;
+
+export const FREE_AI_CREDITS_CREDENTIAL_NAME = 'n8n free OpenAI API credits';
+
+export const STREAM_SEPARATOR = '⧉⇋⇋➽⌑⧉§§\n';

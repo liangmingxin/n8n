@@ -5,6 +5,15 @@ import type {
 	ResourceMapperField,
 } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
+
+import {
+	cellFormat,
+	handlingExtraData,
+	locationDefine,
+	upsertColumnsResourceMapperBuilderHint,
+	useAppendOption,
+} from './commonDescription';
+import type { GoogleSheet } from '../../helpers/GoogleSheet';
 import {
 	ROW_NUMBER,
 	type ISheetUpdateData,
@@ -12,18 +21,11 @@ import {
 	type ValueInputOption,
 	type ValueRenderOption,
 } from '../../helpers/GoogleSheets.types';
-import type { GoogleSheet } from '../../helpers/GoogleSheet';
 import {
 	cellFormatDefault,
 	checkForSchemaChanges,
 	untilSheetSelected,
 } from '../../helpers/GoogleSheets.utils';
-import {
-	cellFormat,
-	handlingExtraData,
-	locationDefine,
-	useAppendOption,
-} from './commonDescription';
 
 export const description: SheetProperties = [
 	{
@@ -170,6 +172,43 @@ export const description: SheetProperties = [
 			value: null,
 		},
 		required: true,
+		builderHint: upsertColumnsResourceMapperBuilderHint,
+		typeOptions: {
+			loadOptionsDependsOn: ['sheetName.value'],
+			resourceMapper: {
+				resourceMapperMethod: 'getMappingColumns',
+				mode: 'upsert',
+				fieldWords: {
+					singular: 'column',
+					plural: 'columns',
+				},
+				addAllFields: true,
+				multiKeyMatch: false,
+				allowEmptyValues: true,
+			},
+		},
+		displayOptions: {
+			show: {
+				resource: ['sheet'],
+				operation: ['appendOrUpdate'],
+				'@version': [{ _cnd: { gte: 4.7 } }],
+			},
+			hide: {
+				...untilSheetSelected,
+			},
+		},
+	},
+	{
+		displayName: 'Columns',
+		name: 'columns',
+		type: 'resourceMapper',
+		noDataExpression: true,
+		default: {
+			mappingMode: 'defineBelow',
+			value: null,
+		},
+		required: true,
+		builderHint: upsertColumnsResourceMapperBuilderHint,
 		typeOptions: {
 			loadOptionsDependsOn: ['sheetName.value'],
 			resourceMapper: {
@@ -187,7 +226,7 @@ export const description: SheetProperties = [
 			show: {
 				resource: ['sheet'],
 				operation: ['appendOrUpdate'],
-				'@version': [{ _cnd: { gte: 4 } }],
+				'@version': [{ _cnd: { between: { from: 4, to: 4.6 } } }],
 			},
 			hide: {
 				...untilSheetSelected,
@@ -286,10 +325,28 @@ export async function execute(
 
 	const newColumns = new Set<string>();
 
-	const columnsToMatchOn: string[] =
-		nodeVersion < 4
-			? [this.getNodeParameter('columnToMatchOn', 0) as string]
-			: (this.getNodeParameter('columns.matchingColumns', 0) as string[]);
+	let columnsToMatchOn: string[];
+	if (nodeVersion < 4) {
+		columnsToMatchOn = [this.getNodeParameter('columnToMatchOn', 0) as string];
+	} else {
+		// Use a fallback so the missing upsert key gets an operation-specific error.
+		const matchingColumns = this.getNodeParameter(
+			'columns.matchingColumns',
+			0,
+			[] as string[],
+		) as string[];
+		if (!Array.isArray(matchingColumns) || matchingColumns.length === 0) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'`columns.matchingColumns` is required for the Append or Update Row operation',
+				{
+					description:
+						'Set `columns.matchingColumns` to a non-empty `string[]` of header names that uniquely identify the row to update (e.g. `["id"]` or `["email"]`). If there is no key column to match on, use the `append` operation instead.',
+				},
+			);
+		}
+		columnsToMatchOn = matchingColumns;
+	}
 
 	// TODO: Add support for multiple columns to match on in the next overhaul
 	const keyIndex = columnNames.indexOf(columnsToMatchOn[0]);
@@ -363,7 +420,7 @@ export async function execute(
 						"At least one value has to be added under 'Values to Send'",
 					);
 				}
-				// eslint-disable-next-line @typescript-eslint/no-loop-func
+
 				const fields = valuesToSend.reduce((acc, entry) => {
 					if (entry.column === 'newColumn') {
 						const columnName = entry.columnName as string;

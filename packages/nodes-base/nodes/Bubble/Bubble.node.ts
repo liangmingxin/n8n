@@ -5,10 +5,9 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 import { bubbleApiRequest, bubbleApiRequestAllItems, validateJSON } from './GenericFunctions';
-
 import { objectFields, objectOperations } from './ObjectDescription';
 
 export class Bubble implements INodeType {
@@ -23,8 +22,9 @@ export class Bubble implements INodeType {
 		defaults: {
 			name: 'Bubble',
 		},
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		usableAsTool: true,
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'bubbleApi',
@@ -80,7 +80,7 @@ export class Bubble implements INodeType {
 						property: [{ key: string; value: string }];
 					};
 
-					const body = {} as IDataObject;
+					const body = Object.create(null) as IDataObject;
 
 					property.forEach((data) => (body[data.key] = data.value));
 
@@ -164,7 +164,7 @@ export class Bubble implements INodeType {
 						property: [{ key: string; value: string }];
 					};
 
-					const body = {} as IDataObject;
+					const body = Object.create(null) as IDataObject;
 
 					property.forEach((data) => (body[data.key] = data.value));
 					responseData = await bubbleApiRequest.call(this, 'PATCH', endpoint, body, {});

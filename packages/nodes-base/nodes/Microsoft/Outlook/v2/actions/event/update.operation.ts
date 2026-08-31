@@ -1,10 +1,11 @@
+import { DateTime } from 'luxon';
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
 
-import { DateTime } from 'luxon';
-import { microsoftApiRequest } from '../../transport';
-import { calendarRLC, eventRLC } from '../../descriptions';
-import { decodeOutlookId } from '../../helpers/utils';
 import { updateDisplayOptions } from '@utils/utilities';
+
+import { calendarRLC, eventAttendeesField, eventLocationField, eventRLC } from '../../descriptions';
+import { decodeOutlookId, prepareEventFields } from '../../helpers/utils';
+import { microsoftApiRequest } from '../../transport';
 
 export const properties: INodeProperties[] = [
 	calendarRLC,
@@ -16,6 +17,10 @@ export const properties: INodeProperties[] = [
 		placeholder: 'Add Field',
 		default: {},
 		options: [
+			{
+				...eventAttendeesField,
+				description: 'Setting attendees on update replaces the entire attendee list',
+			},
 			{
 				// eslint-disable-next-line n8n-nodes-base/node-param-display-name-wrong-for-dynamic-multi-options
 				displayName: 'Categories',
@@ -101,6 +106,7 @@ export const properties: INodeProperties[] = [
 				type: 'boolean',
 				default: true,
 			},
+			eventLocationField,
 			{
 				displayName: 'Sensitivity',
 				name: 'sensitivity',
@@ -209,7 +215,7 @@ const displayOptions = {
 export const description = updateDisplayOptions(displayOptions, properties);
 
 export async function execute(this: IExecuteFunctions, index: number) {
-	const additionalFields = this.getNodeParameter('additionalFields', index);
+	let additionalFields = this.getNodeParameter('additionalFields', index);
 
 	const eventId = decodeOutlookId(
 		this.getNodeParameter('eventId', index, undefined, {
@@ -230,6 +236,8 @@ export async function execute(this: IExecuteFunctions, index: number) {
 			contentType: 'html',
 		};
 	}
+
+	additionalFields = prepareEventFields(additionalFields);
 
 	let startDateTime = additionalFields.start as string;
 	let endDateTime = additionalFields.end as string;
@@ -272,7 +280,7 @@ export async function execute(this: IExecuteFunctions, index: number) {
 
 	const endpoint = `/calendar/events/${eventId}`;
 
-	const responseData = await microsoftApiRequest.call(this, 'PATCH', endpoint, body);
+	const responseData = await microsoftApiRequest.call(this, 'PATCH', endpoint, index, body);
 
 	const executionData = this.helpers.constructExecutionMetaData(
 		this.helpers.returnJsonArray(responseData as IDataObject),

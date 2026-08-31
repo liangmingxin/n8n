@@ -1,4 +1,4 @@
-import { ApplicationError } from 'n8n-workflow';
+import get from 'lodash/get';
 import type {
 	IDataObject,
 	IExecuteFunctions,
@@ -7,8 +7,7 @@ import type {
 	IPollFunctions,
 	IRequestOptions,
 } from 'n8n-workflow';
-
-import get from 'lodash/get';
+import { OperationalError } from 'n8n-workflow';
 
 export async function venafiApiRequest(
 	this: IExecuteFunctions | ILoadOptionsFunctions | IPollFunctions,
@@ -51,7 +50,7 @@ export async function venafiApiRequest(
 
 			errors = errors.map((e: IDataObject) => e.message);
 			// Try to return the error prettier
-			throw new ApplicationError(
+			throw new OperationalError(
 				`Venafi error response [${error.statusCode}]: ${errors.join('|')}`,
 				{ level: 'warning' },
 			);

@@ -8,24 +8,16 @@ import type {
 	INodeTypeDescription,
 	IHttpRequestMethods,
 } from 'n8n-workflow';
-import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
-
-import { apiRequest, apiRequestAllItems } from './GenericFunctions';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 import { attachmentFields, attachmentOperations } from './AttachmentDescription';
-
 import { boardFields, boardOperations } from './BoardDescription';
-
 import { boardMemberFields, boardMemberOperations } from './BoardMemberDescription';
-
-import { cardFields, cardOperations } from './CardDescription';
-
 import { cardCommentFields, cardCommentOperations } from './CardCommentDescription';
-
+import { cardFields, cardOperations } from './CardDescription';
 import { checklistFields, checklistOperations } from './ChecklistDescription';
-
+import { apiRequest, apiRequestAllItems } from './GenericFunctions';
 import { labelFields, labelOperations } from './LabelDescription';
-
 import { listFields, listOperations } from './ListDescription';
 
 interface TrelloBoardType {
@@ -47,15 +39,32 @@ export class Trello implements INodeType {
 		defaults: {
 			name: 'Trello',
 		},
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		usableAsTool: true,
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'trelloApi',
 				required: true,
+				displayOptions: { show: { authentication: ['apiKey'] } },
+			},
+			{
+				name: 'trelloOAuth1Api',
+				required: true,
+				displayOptions: { show: { authentication: ['oAuth1'] } },
 			},
 		],
 		properties: [
+			{
+				displayName: 'Authentication',
+				name: 'authentication',
+				type: 'options',
+				options: [
+					{ name: 'API Key', value: 'apiKey' },
+					{ name: 'OAuth1', value: 'oAuth1' },
+				],
+				default: 'apiKey',
+			},
 			{
 				displayName: 'Resource',
 				name: 'resource',

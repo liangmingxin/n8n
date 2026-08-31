@@ -1,11 +1,12 @@
-import { Service } from 'typedi';
+import { Logger } from '@n8n/backend-common';
+import type { User } from '@n8n/db';
+import { SharedWorkflowRepository, WorkflowRepository } from '@n8n/db';
+import { Service } from '@n8n/di';
 
 import { ActivationErrorsService } from '@/activation-errors.service';
-import type { User } from '@/databases/entities/user';
-import { SharedWorkflowRepository } from '@/databases/repositories/shared-workflow.repository';
-import { WorkflowRepository } from '@/databases/repositories/workflow.repository';
 import { BadRequestError } from '@/errors/response-errors/bad-request.error';
-import { Logger } from '@/logging/logger.service';
+import { ProjectScopeService } from '@/permissions.ee/project-scope.service';
+import { WorkflowFinderService } from '@/workflows/workflow-finder.service';
 
 @Service()
 export class ActiveWorkflowsService {
@@ -14,6 +15,8 @@ export class ActiveWorkflowsService {
 		private readonly workflowRepository: WorkflowRepository,
 		private readonly sharedWorkflowRepository: SharedWorkflowRepository,
 		private readonly activationErrorsService: ActivationErrorsService,
+		private readonly workflowFinderService: WorkflowFinderService,
+		private readonly projectScopeService: ProjectScopeService,
 	) {}
 
 	async getAllActiveIdsInStorage() {
@@ -25,19 +28,26 @@ export class ActiveWorkflowsService {
 	async getAllActiveIdsFor(user: User) {
 		const activationErrors = await this.activationErrorsService.getAll();
 		const activeWorkflowIds = await this.workflowRepository.getActiveIds();
+		const projectRoleSlugs = await this.projectScopeService.getProjectRoleSlugs(user, [
+			'workflow:list',
+		]);
 
-		const hasFullAccess = user.hasGlobalScope('workflow:list');
-		if (hasFullAccess) {
-			return activeWorkflowIds.filter((workflowId) => !activationErrors[workflowId]);
-		}
+		const listableWorkflowIds =
+			projectRoleSlugs === null
+				? new Set(activeWorkflowIds)
+				: await this.sharedWorkflowRepository.findWorkflowIdsInUserProjects(
+						activeWorkflowIds,
+						user.id,
+						projectRoleSlugs,
+					);
 
-		const sharedWorkflowIds =
-			await this.sharedWorkflowRepository.getSharedWorkflowIds(activeWorkflowIds);
-		return sharedWorkflowIds.filter((workflowId) => !activationErrors[workflowId]);
+		return activeWorkflowIds.filter(
+			(workflowId) => listableWorkflowIds.has(workflowId) && !activationErrors[workflowId],
+		);
 	}
 
 	async getActivationError(workflowId: string, user: User) {
-		const workflow = await this.sharedWorkflowRepository.findWorkflowForUser(workflowId, user, [
+		const workflow = await this.workflowFinderService.findWorkflowForUser(workflowId, user, [
 			'workflow:read',
 		]);
 		if (!workflow) {

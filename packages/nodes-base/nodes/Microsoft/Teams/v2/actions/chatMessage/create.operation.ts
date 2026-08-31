@@ -1,8 +1,11 @@
 import type { INodeProperties, IExecuteFunctions, IDataObject } from 'n8n-workflow';
-import { prepareMessage } from '../../helpers/utils';
-import { microsoftApiRequest } from '../../transport';
-import { chatRLC } from '../../descriptions';
+
 import { updateDisplayOptions } from '@utils/utilities';
+
+import { chatRLC } from '../../descriptions';
+import { prepareMessage } from '../../helpers/utils';
+import { buildTeamsPath, microsoftApiRequest, SP_HIDE } from '../../transport';
+import { throwIfChatUnsupported } from './sharedGuard';
 
 const properties: INodeProperties[] = [
 	chatRLC,
@@ -60,12 +63,18 @@ const displayOptions = {
 		resource: ['chatMessage'],
 		operation: ['create'],
 	},
+	hide: {
+		...SP_HIDE,
+	},
 };
 
 export const description = updateDisplayOptions(displayOptions, properties);
 
 export async function execute(this: IExecuteFunctions, i: number, instanceId: string) {
 	// https://docs.microsoft.com/en-us/graph/api/channel-post-messages?view=graph-rest-1.0&tabs=http
+
+	// App-only Graph cannot post chat messages; fail before any request.
+	throwIfChatUnsupported.call(this);
 
 	const chatId = this.getNodeParameter('chatId', i, '', { extractValue: true }) as string;
 	const contentType = this.getNodeParameter('contentType', i) as string;
@@ -82,5 +91,10 @@ export async function execute(this: IExecuteFunctions, i: number, instanceId: st
 		instanceId,
 	);
 
-	return await microsoftApiRequest.call(this, 'POST', `/v1.0/chats/${chatId}/messages`, body);
+	return await microsoftApiRequest.call(
+		this,
+		'POST',
+		buildTeamsPath.call(this, ['/v1.0/chats/', { id: chatId }, '/messages']),
+		body,
+	);
 }

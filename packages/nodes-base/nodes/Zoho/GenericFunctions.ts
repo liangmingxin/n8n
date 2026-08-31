@@ -1,3 +1,5 @@
+import flow from 'lodash/flow';
+import sortBy from 'lodash/sortBy';
 import type {
 	IExecuteFunctions,
 	IHookFunctions,
@@ -8,9 +10,6 @@ import type {
 	IRequestOptions,
 } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
-
-import flow from 'lodash/flow';
-import sortBy from 'lodash/sortBy';
 
 import type {
 	AllFields,
@@ -34,8 +33,14 @@ export function throwOnErrorStatus(
 		data?: Array<{ status: string; message: string }>;
 	},
 ) {
-	if (responseData?.data?.[0].status === 'error') {
-		throw new NodeOperationError(this.getNode(), responseData as Error);
+	const errorRecord = responseData?.data?.[0];
+	if (errorRecord?.status === 'error') {
+		// Zoho returns per-record errors in a 2xx response, so surface the
+		// record's own message (e.g. "duplicate data") instead of a generic one.
+		throw new NodeOperationError(this.getNode(), errorRecord as unknown as Error, {
+			message: errorRecord.message,
+			description: JSON.stringify(errorRecord, null, 2),
+		});
 	}
 }
 
@@ -47,9 +52,7 @@ export async function zohoApiRequest(
 	qs: IDataObject = {},
 	uri?: string,
 ) {
-	const { oauthTokenData } = (await this.getCredentials(
-		'zohoOAuth2Api',
-	)) as ZohoOAuth2ApiCredentials;
+	const { oauthTokenData } = await this.getCredentials<ZohoOAuth2ApiCredentials>('zohoOAuth2Api');
 
 	const options: IRequestOptions = {
 		body: {

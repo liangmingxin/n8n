@@ -1,21 +1,28 @@
-/* eslint-disable n8n-nodes-base/node-dirname-against-convention */
+import { BufferMemory, BufferWindowMemory } from '@langchain/classic/memory';
+import { PostgresChatMessageHistory } from '@langchain/community/stores/message/postgres';
+import { logWrapper, getConnectionHintNoticeField } from '@n8n/ai-utilities';
+import { configurePostgres } from 'n8n-nodes-base/dist/nodes/Postgres/transport/index';
+import type { PostgresNodeCredentials } from 'n8n-nodes-base/dist/nodes/Postgres/v2/helpers/interfaces';
+import { postgresConnectionTest } from 'n8n-nodes-base/dist/nodes/Postgres/v2/methods/credentialTest';
 import type {
 	ISupplyDataFunctions,
 	INodeType,
 	INodeTypeDescription,
 	SupplyData,
 } from 'n8n-workflow';
-import { NodeConnectionType } from 'n8n-workflow';
-import { BufferMemory, BufferWindowMemory } from 'langchain/memory';
-import { PostgresChatMessageHistory } from '@langchain/community/stores/message/postgres';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import type pg from 'pg';
-import { configurePostgres } from 'n8n-nodes-base/dist/nodes/Postgres/v2/transport';
-import type { PostgresNodeCredentials } from 'n8n-nodes-base/dist/nodes/Postgres/v2/helpers/interfaces';
-import { postgresConnectionTest } from 'n8n-nodes-base/dist/nodes/Postgres/v2/methods/credentialTest';
-import { logWrapper } from '../../../utils/logWrapper';
-import { getConnectionHintNoticeField } from '../../../utils/sharedFields';
-import { sessionIdOption, sessionKeyProperty, contextWindowLengthProperty } from '../descriptions';
-import { getSessionId } from '../../../utils/helpers';
+
+import { getSessionId } from '@utils/helpers';
+import { escapeQualifiedSqlIdentifier, isSafeQualifiedSqlIdentifier } from '@utils/sqlIdentifier';
+
+import {
+	sessionIdOption,
+	sessionKeyProperty,
+	contextWindowLengthProperty,
+	expressionSessionKeyProperty,
+	scopedSessionHint,
+} from '../descriptions';
 
 export class MemoryPostgresChat implements INodeType {
 	description: INodeTypeDescription = {
@@ -23,7 +30,7 @@ export class MemoryPostgresChat implements INodeType {
 		name: 'memoryPostgresChat',
 		icon: 'file:postgres.svg',
 		group: ['transform'],
-		version: [1, 1.1],
+		version: [1, 1.1, 1.2, 1.3, 1.4],
 		description: 'Stores the chat history in Postgres table.',
 		defaults: {
 			name: 'Postgres Chat Memory',
@@ -39,6 +46,7 @@ export class MemoryPostgresChat implements INodeType {
 			categories: ['AI'],
 			subcategories: {
 				AI: ['Memory'],
+				Memory: ['Other memories'],
 			},
 			resources: {
 				primaryDocumentation: [
@@ -48,14 +56,16 @@ export class MemoryPostgresChat implements INodeType {
 				],
 			},
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
+
 		inputs: [],
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
-		outputs: [NodeConnectionType.AiMemory],
+
+		outputs: [NodeConnectionTypes.AiMemory],
 		outputNames: ['Memory'],
 		properties: [
-			getConnectionHintNoticeField([NodeConnectionType.AiAgent]),
+			getConnectionHintNoticeField([NodeConnectionTypes.AiAgent]),
 			sessionIdOption,
+			expressionSessionKeyProperty(1.2),
+			scopedSessionHint(1.4),
 			sessionKeyProperty,
 			{
 				displayName: 'Table Name',
@@ -80,7 +90,22 @@ export class MemoryPostgresChat implements INodeType {
 
 	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
 		const credentials = await this.getCredentials<PostgresNodeCredentials>('postgres');
-		const tableName = this.getNodeParameter('tableName', itemIndex, 'n8n_chat_histories') as string;
+		// An expression-bound Table Name can resolve to an empty value (e.g. a request
+		// field that wasn't provided), so fall back to the default instead of failing.
+		const rawTableName =
+			(this.getNodeParameter('tableName', itemIndex, 'n8n_chat_histories') as string) ||
+			'n8n_chat_histories';
+		// The underlying store interpolates the table name directly into SQL.
+		// Reject anything that is not a plain (optionally schema-qualified) identifier,
+		// then quote it as a defence-in-depth measure so nothing unexpected reaches the database.
+		if (!isSafeQualifiedSqlIdentifier(rawTableName)) {
+			throw new NodeOperationError(this.getNode(), `Invalid table name "${rawTableName}"`, {
+				itemIndex,
+				description:
+					'Table names may only contain letters, numbers and underscores, with an optional "schema." prefix.',
+			});
+		}
+		const tableName = escapeQualifiedSqlIdentifier(rawTableName);
 		const sessionId = getSessionId(this, itemIndex);
 
 		const pgConf = await configurePostgres.call(this, credentials);
@@ -107,12 +132,7 @@ export class MemoryPostgresChat implements INodeType {
 			...kOptions,
 		});
 
-		async function closeFunction() {
-			void pool.end();
-		}
-
 		return {
-			closeFunction,
 			response: logWrapper(memory, this),
 		};
 	}

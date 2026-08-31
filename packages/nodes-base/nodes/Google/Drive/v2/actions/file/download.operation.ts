@@ -6,9 +6,10 @@ import type {
 	INodeProperties,
 } from 'n8n-workflow';
 
+import { updateDisplayOptions } from '@utils/utilities';
+
 import { googleApiRequest } from '../../transport';
 import { fileRLC } from '../common.descriptions';
-import { updateDisplayOptions } from '@utils/utilities';
 
 const properties: INodeProperties[] = [
 	{
@@ -54,6 +55,11 @@ const properties: INodeProperties[] = [
 									{
 										name: 'HTML',
 										value: 'text/html',
+									},
+									{
+										// eslint-disable-next-line n8n-nodes-base/node-param-display-name-miscased
+										name: 'Markdown (md)',
+										value: 'text/markdown',
 									},
 									{
 										name: 'MS Word Document',
@@ -226,7 +232,7 @@ export async function execute(
 			mime = this.getNodeParameter(
 				`${parameterKey}.sheetsToFormat`,
 				i,
-				'application/x-vnd.oasis.opendocument.spreadsheet',
+				'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 			) as string;
 		} else {
 			mime = this.getNodeParameter(`${parameterKey}.drawingsToFormat`, i, 'image/jpeg') as string;

@@ -1,18 +1,19 @@
-import type {
-	IExecuteFunctions,
-	ILoadOptionsFunctions,
-	ICredentialTestFunctions,
-	IDataObject,
-	IPollFunctions,
-	IRequestOptions,
+import { formatPemBlock } from '@n8n/utils/format-pem-block';
+import * as jwt from 'jsonwebtoken';
+import { DateTime } from 'luxon';
+import moment from 'moment-timezone';
+import {
+	type IExecuteFunctions,
+	type IExecuteSingleFunctions,
+	type ILoadOptionsFunctions,
+	type ICredentialTestFunctions,
+	type IDataObject,
+	type IPollFunctions,
+	type IRequestOptions,
+	NodeOperationError,
 } from 'n8n-workflow';
 
-import moment from 'moment-timezone';
-import * as jwt from 'jsonwebtoken';
-
-import { formatPrivateKey } from '@utils/utilities';
-
-const googleServiceAccountScopes = {
+export const googleServiceAccountScopes = {
 	bigquery: ['https://www.googleapis.com/auth/bigquery'],
 	books: ['https://www.googleapis.com/auth/books'],
 	chat: ['https://www.googleapis.com/auth/chat.bot'],
@@ -44,6 +45,12 @@ const googleServiceAccountScopes = {
 		'https://www.googleapis.com/auth/spreadsheets',
 		'https://www.googleapis.com/auth/drive.metadata',
 	],
+	sheetV2Trigger: [
+		'https://www.googleapis.com/auth/spreadsheets',
+		'https://www.googleapis.com/auth/drive.file',
+		'https://www.googleapis.com/auth/drive.metadata',
+		'https://www.googleapis.com/auth/drive.readonly',
+	],
 	slides: [
 		'https://www.googleapis.com/auth/drive.file',
 		'https://www.googleapis.com/auth/presentations',
@@ -56,13 +63,22 @@ const googleServiceAccountScopes = {
 		'https://www.googleapis.com/auth/datastore',
 		'https://www.googleapis.com/auth/firebase',
 	],
+	cloudStorage: [
+		'https://www.googleapis.com/auth/devstorage.full_control',
+		'https://www.googleapis.com/auth/cloud-platform',
+	],
 	vertex: ['https://www.googleapis.com/auth/cloud-platform'],
-};
+} as const;
 
-type GoogleServiceAccount = keyof typeof googleServiceAccountScopes;
+export type GoogleServiceAccount = keyof typeof googleServiceAccountScopes;
 
 export async function getGoogleAccessToken(
-	this: IExecuteFunctions | ILoadOptionsFunctions | ICredentialTestFunctions | IPollFunctions,
+	this:
+		| IExecuteFunctions
+		| IExecuteSingleFunctions
+		| ILoadOptionsFunctions
+		| ICredentialTestFunctions
+		| IPollFunctions,
 	credentials: IDataObject,
 	service: GoogleServiceAccount,
 ): Promise<IDataObject> {
@@ -70,7 +86,7 @@ export async function getGoogleAccessToken(
 
 	const scopes = googleServiceAccountScopes[service];
 
-	const privateKey = formatPrivateKey(credentials.privateKey as string);
+	const privateKey = formatPemBlock(credentials.privateKey as string);
 	credentials.email = ((credentials.email as string) || '').trim();
 
 	const now = moment().unix();
@@ -88,7 +104,6 @@ export async function getGoogleAccessToken(
 		{
 			algorithm: 'RS256',
 			header: {
-				kid: privateKey,
 				typ: 'JWT',
 				alg: 'RS256',
 			},
@@ -109,4 +124,21 @@ export async function getGoogleAccessToken(
 	};
 
 	return await this.helpers.request(options);
+}
+
+export function validateAndSetDate(
+	filter: IDataObject,
+	key: string,
+	timezone: string,
+	context: IExecuteFunctions,
+) {
+	const date = DateTime.fromISO(filter[key] as string);
+	if (date.isValid) {
+		filter[key] = date.setZone(timezone).toISO();
+	} else {
+		throw new NodeOperationError(
+			context.getNode(),
+			`The value "${filter[key] as string}" is not a valid DateTime.`,
+		);
+	}
 }

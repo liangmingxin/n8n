@@ -1,9 +1,11 @@
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
+
+import { updateDisplayOptions } from '@utils/utilities';
+
+import { folderRLC, messageRLC } from '../../descriptions';
 import { createMessage, decodeOutlookId } from '../../helpers/utils';
 import { microsoftApiRequest } from '../../transport';
-import { folderRLC, messageRLC } from '../../descriptions';
-import { updateDisplayOptions } from '@utils/utilities';
 
 export const properties: INodeProperties[] = [
 	messageRLC,
@@ -192,6 +194,7 @@ export async function execute(this: IExecuteFunctions, index: number) {
 			this,
 			'POST',
 			`/messages/${messageId}/move`,
+			index,
 			body,
 		);
 
@@ -213,7 +216,14 @@ export async function execute(this: IExecuteFunctions, index: number) {
 		throw new NodeOperationError(this.getNode(), 'No fields to update got specified');
 	}
 
-	responseData = await microsoftApiRequest.call(this, 'PATCH', `/messages/${messageId}`, body, {});
+	responseData = await microsoftApiRequest.call(
+		this,
+		'PATCH',
+		`/messages/${messageId}`,
+		index,
+		body,
+		{},
+	);
 
 	const executionData = this.helpers.constructExecutionMetaData(
 		this.helpers.returnJsonArray(responseData as IDataObject),

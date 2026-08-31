@@ -1,7 +1,9 @@
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
-import { microsoftApiRequest } from '../../transport';
-import { attachmentRLC, messageRLC } from '../../descriptions';
+
 import { updateDisplayOptions } from '@utils/utilities';
+
+import { attachmentRLC, messageRLC } from '../../descriptions';
+import { microsoftApiRequest } from '../../transport';
 
 export const properties: INodeProperties[] = [
 	messageRLC,
@@ -81,6 +83,7 @@ export async function execute(this: IExecuteFunctions, index: number) {
 		this,
 		'GET',
 		`/messages/${messageId}/attachments/${attachmentId}`,
+		index,
 		undefined,
 		qs,
 	);

@@ -1,7 +1,9 @@
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
-import { microsoftApiRequest, microsoftApiRequestAllItems } from '../../transport';
-import { returnAllOrLimit } from '../../descriptions';
+
 import { updateDisplayOptions } from '@utils/utilities';
+
+import { returnAllOrLimit } from '../../descriptions';
+import { microsoftApiRequest, microsoftApiRequestAllItems } from '../../transport';
 
 export const properties: INodeProperties[] = [
 	...returnAllOrLimit,
@@ -60,12 +62,13 @@ export async function execute(this: IExecuteFunctions, index: number) {
 			'value',
 			'GET',
 			endpoint,
+			index,
 			undefined,
 			qs,
 		);
 	} else {
 		qs.$top = this.getNodeParameter('limit', index);
-		responseData = await microsoftApiRequest.call(this, 'GET', endpoint, undefined, qs);
+		responseData = await microsoftApiRequest.call(this, 'GET', endpoint, index, undefined, qs);
 		responseData = responseData.value;
 	}
 

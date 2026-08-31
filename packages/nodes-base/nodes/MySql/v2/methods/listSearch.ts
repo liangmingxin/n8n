@@ -1,8 +1,12 @@
 import type { IDataObject, ILoadOptionsFunctions, INodeListSearchResult } from 'n8n-workflow';
-import { createPool } from '../transport';
-import type { MysqlNodeCredentials } from '../helpers/interfaces';
 
-export async function searchTables(this: ILoadOptionsFunctions): Promise<INodeListSearchResult> {
+import type { MysqlNodeCredentials } from '../helpers/interfaces';
+import { createPool } from '../transport';
+
+export async function searchTables(
+	this: ILoadOptionsFunctions,
+	filter?: string,
+): Promise<INodeListSearchResult> {
 	const credentials = await this.getCredentials<MysqlNodeCredentials>('mySql');
 
 	const nodeOptions = this.getNodeParameter('options', 0) as IDataObject;
@@ -12,8 +16,13 @@ export async function searchTables(this: ILoadOptionsFunctions): Promise<INodeLi
 	try {
 		const connection = await pool.getConnection();
 
-		const query = 'SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = ?';
-		const values = [credentials.database];
+		let query = 'SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = ?';
+		const values: string[] = [credentials.database];
+
+		if (filter) {
+			query += ' AND TABLE_NAME LIKE ?';
+			values.push(`%${filter}%`);
+		}
 
 		const formatedQuery = connection.format(query, values);
 

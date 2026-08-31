@@ -1,14 +1,13 @@
+import get from 'lodash/get';
 import type {
 	IDataObject,
 	IExecuteFunctions,
 	IHookFunctions,
 	JsonObject,
 	IHttpRequestMethods,
-	IRequestOptions,
+	IHttpRequestOptions,
 } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
-
-import get from 'lodash/get';
 
 /**
  * Make an API request to Spotify
@@ -22,15 +21,14 @@ export async function spotifyApiRequest(
 	query?: IDataObject,
 	uri?: string,
 ): Promise<any> {
-	const options: IRequestOptions = {
+	const options: IHttpRequestOptions = {
 		method,
 		headers: {
-			'User-Agent': 'n8n',
 			'Content-Type': 'text/plain',
 			Accept: ' application/json',
 		},
 		qs: query,
-		uri: uri || `https://api.spotify.com/v1${endpoint}`,
+		url: uri ?? `https://api.spotify.com/v1${endpoint}`,
 		json: true,
 	};
 
@@ -38,7 +36,7 @@ export async function spotifyApiRequest(
 		options.body = body;
 	}
 	try {
-		return await this.helpers.requestOAuth2.call(this, 'spotifyOAuth2Api', options);
+		return await this.helpers.httpRequestWithAuthentication.call(this, 'spotifyOAuth2Api', options);
 	} catch (error) {
 		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}

@@ -1,57 +1,77 @@
-import type { Response } from 'express';
-import Container from 'typedi';
+import { CreateVariableRequestDto, UpdateVariableRequestDto } from '@n8n/api-types';
+import type { AuthenticatedRequest } from '@n8n/db';
+import { Container } from '@n8n/di';
 
-import { VariablesRepository } from '@/databases/repositories/variables.repository';
-import { VariablesController } from '@/environments/variables/variables.controller.ee';
-import type { PaginatedRequest } from '@/public-api/types';
+import type { PublicAPIEndpoint } from '../../shared/handler.types';
+import {
+	apiKeyHasScopeWithGlobalScopeFallback,
+	isLicensed,
+	validCursor,
+} from '../../shared/middlewares/global.middleware';
+import { paginateArray } from '../../shared/services/pagination.service';
+
+import { VariablesService } from '@/environments.ee/variables/variables.service.ee';
+import { BadRequestError } from '@/errors/response-errors/bad-request.error';
 import type { VariablesRequest } from '@/requests';
 
-import { globalScope, isLicensed, validCursor } from '../../shared/middlewares/global.middleware';
-import { encodeNextCursor } from '../../shared/services/pagination.service';
+type VariablesHandlers = {
+	createVariable: PublicAPIEndpoint<AuthenticatedRequest>;
+	updateVariable: PublicAPIEndpoint<AuthenticatedRequest<{ id: string }>>;
+	deleteVariable: PublicAPIEndpoint<AuthenticatedRequest<{ id: string }>>;
+	getVariables: PublicAPIEndpoint<VariablesRequest.GetAll>;
+};
 
-type Create = VariablesRequest.Create;
-type Delete = VariablesRequest.Delete;
-type GetAll = PaginatedRequest;
-
-export = {
+const variablesHandlers: VariablesHandlers = {
 	createVariable: [
 		isLicensed('feat:variables'),
-		globalScope('variable:create'),
-		async (req: Create, res: Response) => {
-			await Container.get(VariablesController).createVariable(req);
+		apiKeyHasScopeWithGlobalScopeFallback({ scope: 'variable:create' }),
+		async (req, res) => {
+			const payload = CreateVariableRequestDto.safeParse(req.body);
+			if (payload.error) {
+				throw new BadRequestError(payload.error.errors[0]?.message ?? 'Invalid request body');
+			}
+			await Container.get(VariablesService).create(req.user, payload.data);
 
-			res.status(201).send();
+			return res.status(201).send();
+		},
+	],
+	updateVariable: [
+		isLicensed('feat:variables'),
+		apiKeyHasScopeWithGlobalScopeFallback({ scope: 'variable:update' }),
+		async (req, res) => {
+			const payload = UpdateVariableRequestDto.safeParse(req.body);
+			if (payload.error) {
+				throw new BadRequestError(payload.error.errors[0]?.message ?? 'Invalid request body');
+			}
+			await Container.get(VariablesService).update(req.user, req.params.id, payload.data);
+
+			return res.status(204).send();
 		},
 	],
 	deleteVariable: [
 		isLicensed('feat:variables'),
-		globalScope('variable:delete'),
-		async (req: Delete, res: Response) => {
-			await Container.get(VariablesController).deleteVariable(req);
+		apiKeyHasScopeWithGlobalScopeFallback({ scope: 'variable:delete' }),
+		async (req, res) => {
+			await Container.get(VariablesService).deleteForUser(req.user, req.params.id);
 
-			res.status(204).send();
+			return res.status(204).send();
 		},
 	],
 	getVariables: [
 		isLicensed('feat:variables'),
-		globalScope('variable:list'),
+		apiKeyHasScopeWithGlobalScopeFallback({ scope: 'variable:list' }),
 		validCursor,
-		async (req: GetAll, res: Response) => {
-			const { offset = 0, limit = 100 } = req.query;
+		async (req, res) => {
+			const { offset = 0, limit = 100, projectId, state } = req.query;
 
-			const [variables, count] = await Container.get(VariablesRepository).findAndCount({
-				skip: offset,
-				take: limit,
+			const variables = await Container.get(VariablesService).getAllForUser(req.user, {
+				state,
+				projectId: projectId === 'null' ? null : projectId,
 			});
 
-			return res.json({
-				data: variables,
-				nextCursor: encodeNextCursor({
-					offset,
-					limit,
-					numberOfTotalRecords: count,
-				}),
-			});
+			return res.json(paginateArray(variables, { offset, limit }));
 		},
 	],
 };
+
+export = variablesHandlers;

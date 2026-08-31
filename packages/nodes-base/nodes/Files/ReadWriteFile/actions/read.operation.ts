@@ -1,4 +1,5 @@
-import { NodeApiError } from 'n8n-workflow';
+import glob from 'fast-glob';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 import type {
 	IExecuteFunctions,
 	INodeExecutionData,
@@ -6,11 +7,21 @@ import type {
 	JsonObject,
 } from 'n8n-workflow';
 
-import glob from 'fast-glob';
-import { errorMapper } from '../helpers/utils';
 import { updateDisplayOptions } from '@utils/utilities';
 
+import { errorMapper, normalizeFileSelector } from '../helpers/utils';
+
 export const properties: INodeProperties[] = [
+	{
+		displayName:
+			'The node can only access paths under /home/node/. Paths outside this directory (for example, /tmp/ or /data/) fail with an access error.',
+		name: 'cloudNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			showOnDeployment: 'cloud',
+		},
+	},
 	{
 		displayName: 'File(s) Selector',
 		name: 'fileSelector',
@@ -75,16 +86,15 @@ const displayOptions = {
 export const description = updateDisplayOptions(displayOptions, properties);
 
 export async function execute(this: IExecuteFunctions, items: INodeExecutionData[]) {
+	const nodeVersion = this.getNode().typeVersion;
 	const returnData: INodeExecutionData[] = [];
 	let fileSelector;
 
 	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 		try {
-			fileSelector = String(this.getNodeParameter('fileSelector', itemIndex));
-
-			if (/^[a-zA-Z]:/.test(fileSelector)) {
-				fileSelector = fileSelector.replace(/\\\\/g, '/');
-			}
+			fileSelector = normalizeFileSelector(
+				this.getNodeParameter('fileSelector', itemIndex) as string,
+			);
 
 			const options = this.getNodeParameter('options', itemIndex, {});
 
@@ -96,9 +106,18 @@ export async function execute(this: IExecuteFunctions, items: INodeExecutionData
 
 			const files = await glob(fileSelector);
 
+			if (files.length === 0 && nodeVersion > 1) {
+				throw new NodeOperationError(this.getNode(), 'No file(s) found', {
+					itemIndex,
+					description: `No file matching the selector "${fileSelector}" found`,
+				});
+			}
+
 			const newItems: INodeExecutionData[] = [];
 			for (const filePath of files) {
-				const stream = await this.helpers.createReadStream(filePath);
+				const stream = await this.helpers.createReadStream(
+					await this.helpers.resolvePath(filePath),
+				);
 				const binaryData = await this.helpers.prepareBinaryData(stream, filePath);
 
 				if (options.fileName !== undefined) {
@@ -121,7 +140,6 @@ export async function execute(this: IExecuteFunctions, items: INodeExecutionData
 						mimeType: binaryData.mimeType,
 						fileType: binaryData.fileType,
 						fileName: binaryData.fileName,
-						directory: binaryData.directory,
 						fileExtension: binaryData.fileExtension,
 						fileSize: binaryData.fileSize,
 					},
@@ -132,14 +150,14 @@ export async function execute(this: IExecuteFunctions, items: INodeExecutionData
 			}
 			returnData.push(...newItems);
 		} catch (error) {
-			const nodeOperatioinError = errorMapper.call(this, error, itemIndex, {
+			const nodeOperationError = errorMapper.call(this, error, itemIndex, {
 				filePath: fileSelector,
 				operation: 'read',
 			});
 			if (this.continueOnFail()) {
 				returnData.push({
 					json: {
-						error: nodeOperatioinError.message,
+						error: nodeOperationError.message,
 					},
 					pairedItem: {
 						item: itemIndex,

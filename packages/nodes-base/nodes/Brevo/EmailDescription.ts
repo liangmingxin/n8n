@@ -1,4 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
+
 import { BrevoNode } from './GenericFunctions';
 
 export const emailOperations: INodeProperties[] = [
@@ -125,7 +126,7 @@ const sendHtmlEmailFields: INodeProperties[] = [
 		},
 	},
 	{
-		displayName: 'Receipients',
+		displayName: 'Recipients',
 		name: 'receipients',
 		type: 'string',
 		displayOptions: {
@@ -138,7 +139,7 @@ const sendHtmlEmailFields: INodeProperties[] = [
 		required: true,
 		routing: {
 			send: {
-				preSend: [BrevoNode.Validators.validateAndCompileReceipientEmails],
+				preSend: [BrevoNode.Validators.validateAndCompileRecipientEmails],
 			},
 		},
 	},
@@ -185,7 +186,7 @@ const sendHtmlEmailFields: INodeProperties[] = [
 				},
 			},
 			{
-				displayName: 'Receipients BCC',
+				displayName: 'Recipients BCC',
 				name: 'receipientsBCC',
 				placeholder: 'Add BCC',
 				type: 'fixedCollection',
@@ -193,10 +194,10 @@ const sendHtmlEmailFields: INodeProperties[] = [
 				options: [
 					{
 						name: 'receipientBcc',
-						displayName: 'Receipient',
+						displayName: 'Recipient',
 						values: [
 							{
-								displayName: 'Receipient',
+								displayName: 'Recipient',
 								name: 'bcc',
 								type: 'string',
 								default: '',
@@ -211,7 +212,7 @@ const sendHtmlEmailFields: INodeProperties[] = [
 				},
 			},
 			{
-				displayName: 'Receipients CC',
+				displayName: 'Recipients CC',
 				name: 'receipientsCC',
 				placeholder: 'Add CC',
 				type: 'fixedCollection',
@@ -219,10 +220,10 @@ const sendHtmlEmailFields: INodeProperties[] = [
 				options: [
 					{
 						name: 'receipientCc',
-						displayName: 'Receipient',
+						displayName: 'Recipient',
 						values: [
 							{
-								displayName: 'Receipient',
+								displayName: 'Recipient',
 								name: 'cc',
 								type: 'string',
 								default: '',
@@ -326,7 +327,7 @@ const sendHtmlTemplateEmailFields: INodeProperties[] = [
 		},
 	},
 	{
-		displayName: 'Receipients',
+		displayName: 'Recipients',
 		name: 'receipients',
 		type: 'string',
 		displayOptions: {
@@ -339,7 +340,7 @@ const sendHtmlTemplateEmailFields: INodeProperties[] = [
 		required: true,
 		routing: {
 			send: {
-				preSend: [BrevoNode.Validators.validateAndCompileReceipientEmails],
+				preSend: [BrevoNode.Validators.validateAndCompileRecipientEmails],
 			},
 		},
 	},
